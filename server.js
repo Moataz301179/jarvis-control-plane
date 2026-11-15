@@ -1,3 +1,5 @@
+import { installProcessGuards } from './lib/process-guard.js';
+installProcessGuards('server');
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -426,6 +428,10 @@ jarvisToolDefinitions.push({type:'function',function:{name:'dispatch_mission',de
 jarvisToolDefinitions.push({type:'function',function:{name:'get_mission_status',description:'Read durable mission progress and prior agent results. awaiting_verification is not completed.',parameters:{type:'object',properties:{request_key:{type:'string'}},required:['request_key']}}});
 
 function error(res, err) {
+  if (res.headersSent || res.writableEnded) {
+    res.destroy();
+    return;
+  }
   const status = err.statusCode || 500;
   if (status >= 500) console.error(err);
   if (err.retryAfter) res.setHeader('retry-after', String(err.retryAfter));
@@ -3148,6 +3154,7 @@ async function handle(req, res) {
 }
 
 const server = http.createServer((req, res) => handle(req, res).catch((err) => error(res, err)));
+server.requestTimeout = 600000;
 server.listen(config.port, '127.0.0.1', () => console.log(`JARVIS API listening on 127.0.0.1:${config.port}`));
 let shuttingDown = false;
 async function shutdown(signal) {

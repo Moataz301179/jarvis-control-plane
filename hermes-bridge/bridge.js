@@ -1,3 +1,5 @@
+import { installProcessGuards } from '../lib/process-guard.js';
+installProcessGuards('hermes-bridge');
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';

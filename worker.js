@@ -1,3 +1,5 @@
+import { installProcessGuards } from './lib/process-guard.js';
+installProcessGuards('worker');
 import { config } from './lib/config.js';
 import { pool, transaction, audit } from './lib/db.js';
 import { executeTool } from './lib/tools.js';
