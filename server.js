@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath, URL } from 'node:url';
 import { config } from './lib/config.js';
 import { pool, query, transaction, audit } from './lib/db.js';
-import { requireOwner, requireSession, requireWorker, requireMacBridge, requireHermesBridge, hashToken, issueSession } from './lib/auth.js';
+import { requireOwner, requireSession, requireWorker, requireMacBridge, requireHermesBridge, requireHermesCloudBridge, hashToken, issueSession } from './lib/auth.js';
 import { authenticateRequest, requirePermission, accessState, createPrincipal, deactivatePrincipal } from './lib/rbac.js';
 import { encryptSecret, decryptSecret } from './lib/secrets.js';
 import { sendJson, readJson, readBuffer, notFound } from './lib/http.js';
@@ -1991,7 +1991,7 @@ async function approveHermesJob(id, actor = 'owner') {
 }
 
 async function hermesHeartbeat(req) {
-  const body = await readJson(req);
+  const body = req.body || await readJson(req);
   const target = String(body.target || 'mac');
   if (!['cloud','mac'].includes(target)) throw Object.assign(new Error('invalid Hermes bridge target'), { statusCode: 400 });
   const bridgeId = target === 'cloud' ? 'cloud' : 'primary';
@@ -2760,25 +2760,28 @@ async function handle(req, res) {
     if (!macAuthorized && !hermesAuthorized) throw Object.assign(new Error('unauthorized capability sync'), { statusCode: 401 });
     req.body = await readJson(req, 5 * 1024 * 1024);
     const agentId = String(req.body.agent_id || '').toLowerCase();
-    if (hermesAuthorized && !['hermes','hermes-cloud'].includes(agentId)) throw Object.assign(new Error('Hermes bridge may sync only Hermes capabilities'), { statusCode: 403 });
+    if (legacyHermesAuthorized && agentId !== 'hermes') throw Object.assign(new Error('Mac Hermes bridge may sync only Mac Hermes capabilities'), { statusCode: 403 });
+    if (cloudHermesAuthorized && agentId !== 'hermes-cloud') throw Object.assign(new Error('Cloud Hermes bridge may sync only cloud Hermes capabilities'), { statusCode: 403 });
     if (macAuthorized && !['codex','claude'].includes(agentId)) throw Object.assign(new Error('Mac bridge may sync only Codex and Claude capabilities'), { statusCode: 403 });
     return sendJson(res, 200, await syncAgentCapabilities(req.body, 'bridge', { allowVerified: false }));
   }
   if (url.pathname === '/v1/hermes/bridge/jobs/next' && req.method === 'POST') {
-    if (!requireHermesBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
     const body = await readJson(req);
     const target = String(body.target || 'mac');
     if (!['cloud','mac'].includes(target)) throw Object.assign(new Error('invalid Hermes bridge target'), { statusCode: 400 });
+    if (target === 'cloud' ? !requireHermesCloudBridge(req) : !requireHermesBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
     return sendJson(res, 200, { job: await claimHermesJob(target) });
   }
   const hermesLeaseMatch = url.pathname.match(/^\/v1\/hermes\/bridge\/jobs\/([0-9a-f-]+)\/lease$/);
   if (req.method === 'POST' && hermesLeaseMatch) {
-    if (!requireHermesBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
+    const target = await query('SELECT execution_target FROM hermes_jobs WHERE id=$1', [hermesLeaseMatch[1]]);
+    if (!target.rows.length || (target.rows[0].execution_target === 'cloud' ? !requireHermesCloudBridge(req) : !requireHermesBridge(req))) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
     return sendJson(res, 200, await renewHermesJobLease(hermesLeaseMatch[1]));
   }
   const hermesResultMatch = url.pathname.match(/^\/v1\/hermes\/bridge\/jobs\/([0-9a-f-]+)\/result$/);
   if (req.method === 'POST' && hermesResultMatch) {
-    if (!requireHermesBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
+    const target = await query('SELECT execution_target FROM hermes_jobs WHERE id=$1', [hermesResultMatch[1]]);
+    if (!target.rows.length || (target.rows[0].execution_target === 'cloud' ? !requireHermesCloudBridge(req) : !requireHermesBridge(req))) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
     req.body = await readJson(req);
     return sendJson(res, 200, await completeHermesJob(hermesResultMatch[1], req.body));
   }

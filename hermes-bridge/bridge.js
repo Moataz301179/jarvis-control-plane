@@ -25,15 +25,16 @@ async function loadConfig() {
     if (index > 0) values[line.slice(0, index).trim()] = line.slice(index + 1).trim();
   }
   const config = { ...values, ...process.env };
-  if (!config.JARVIS_HERMES_BRIDGE_TOKEN) throw new Error('Missing JARVIS_HERMES_BRIDGE_TOKEN');
+  const bridgeToken = config.JARVIS_HERMES_CLOUD_BRIDGE_TOKEN || config.JARVIS_HERMES_BRIDGE_TOKEN;
+  if (!bridgeToken) throw new Error('Missing Hermes bridge token');
   return {
     baseUrl: (config.JARVIS_HERMES_BRIDGE_URL || 'http://127.0.0.1:13100').replace(/\/$/, ''),
-    token: config.JARVIS_HERMES_BRIDGE_TOKEN,
+    token: bridgeToken,
     profile: config.HERMES_PROFILE || 'default',
     gatewayUrl: config.HERMES_GATEWAY_URL || 'http://127.0.0.1:8644',
     provider: config.HERMES_PROVIDER || 'ollama-cloud',
     model: config.HERMES_MODEL || 'deepseek-v4.1-flash',
-    target: config.JARVIS_HERMES_EXECUTION_TARGET || 'mac',
+    target: config.JARVIS_HERMES_EXECUTION_TARGET || (config.JARVIS_HERMES_CLOUD_BRIDGE_TOKEN ? 'cloud' : 'mac'),
   };
 }
 
@@ -314,7 +315,11 @@ async function executeJob(job) {
       cwd,
       timeout: 15 * 60 * 1000,
       maxBuffer: 8 * 1024 * 1024,
-      env: { ...process.env, ...(runtimeConfig?.api_key ? { OLLAMA_API_KEY: runtimeConfig.api_key } : {}), HERMES_HOME: process.env.HERMES_HOME || path.join(os.homedir(), '.hermes') },
+      env: {
+        ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !['JARVIS_HERMES_CLOUD_BRIDGE_TOKEN','JARVIS_HERMES_BRIDGE_TOKEN','JARVIS_HERMES_BRIDGE_URL','JARVIS_HERMES_EXECUTION_TARGET'].includes(key))),
+        ...(runtimeConfig?.api_key ? { OLLAMA_API_KEY: runtimeConfig.api_key } : {}),
+        HERMES_HOME: process.env.HERMES_HOME || path.join(os.homedir(), '.hermes'),
+      },
     });
     let usage = {};
     try { usage = JSON.parse(await fs.readFile(usagePath, 'utf8')); } catch {}
