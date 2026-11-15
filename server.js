@@ -1543,6 +1543,7 @@ You also have a public GitHub repository installer and project shared-memory too
     const requestedTaskClass = /\b(uncensored|unfiltered)\b/i.test(message) ? 'uncensored' : 'chat';
     const cloudRoute = await resolveCentralModelRoute({ agentId: 'jarvis', projectCode: 'STUDIO', taskClass: requestedTaskClass }).catch(() => null);
     const routedModel = cloudRoute?.provider === 'ollama-cloud' ? cloudRoute.model : model;
+    const freeModelPolicy = assertFreeModel('ollama-cloud', routedModel, await refreshModels());
     const apiHistory = history.slice(-16).map((entry) => ({ role: entry.role, content: entry.content }));
     const current = image
       ? { role: 'user', content: [{ type: 'text', text: message }, { type: 'image_url', image_url: { url: image.dataUrl } }] }
@@ -1559,7 +1560,7 @@ You also have a public GitHub repository installer and project shared-memory too
       if (!response.ok) throw new Error(`Ollama Cloud HTTP ${response.status}`);
       const body = await response.json();
       const assistant = body.message || {};
-      await recordInferenceUsage({ operation: 'chat', conversationId, provider: 'ollama-cloud', model: routedModel, requestId: body.created_at || null, usage: { prompt_tokens: body.prompt_eval_count, completion_tokens: body.eval_count }, freeVerified: false, metadata: { round, cloud: true, taskClass: requestedTaskClass, toolCalls: assistant.tool_calls?.length || 0 } });
+      await recordInferenceUsage({ operation: 'chat', conversationId, provider: 'ollama-cloud', model: routedModel, requestId: body.created_at || null, usage: { prompt_tokens: body.prompt_eval_count, completion_tokens: body.eval_count }, freeVerified: freeModelPolicy.freeVerified, metadata: { round, cloud: true, taskClass: requestedTaskClass, toolCalls: assistant.tool_calls?.length || 0 } });
       if (Array.isArray(assistant.tool_calls) && assistant.tool_calls.length) {
         messages.push({ role: 'assistant', content: assistant.content || '', tool_calls: assistant.tool_calls });
         for (const call of assistant.tool_calls.slice(0, 4)) {
@@ -1936,6 +1937,7 @@ async function createHermesJob(body) {
     route={provider,model,source:'agent_factory_definition'};
   } else route = await resolveCentralModelRoute({ agentId: 'hermes', projectCode: project, taskClass });
   if (route.provider !== 'ollama-cloud') throw Object.assign(new Error(`Hermes execution requires Ollama Cloud; current route resolved to ${route.provider}`), { statusCode: 424 });
+  assertFreeModel(route.provider, route.model, await refreshModels());
   const factorySkills=body.agent_skill_allowlist&&Array.isArray(body.agent_skill_allowlist)?[...new Set(body.agent_skill_allowlist.map(String))]:[];
   const factoryData=factoryContext?JSON.stringify(factoryContext):'{}';
   const row = await query("INSERT INTO hermes_jobs (project_code,title,instruction,status,risk,toolsets,working_directory,requested_by,model_provider,model,agent_role,hermes_profile,agent_factory_context,agent_skill_allowlist,execution_target) VALUES ($1,$2,$3,$4,$5,$6,$7,'owner',$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14) RETURNING *", [project, title, instruction, status, risk, JSON.stringify(toolsets), workingDirectory, route.provider, route.model, specialist.role, specialist.profile, factoryData, JSON.stringify(factorySkills), executionTarget]);
@@ -2745,18 +2747,25 @@ async function handle(req, res) {
     return sendJson(res, 200, { job: await claimMacJob() });
   }
   if (url.pathname === '/v1/hermes/bridge/heartbeat' && req.method === 'POST') {
-    if (!requireHermesBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
+    req.body = await readJson(req);
+    const target = String(req.body.target || 'mac');
+    if (target === 'cloud' ? !requireHermesCloudBridge(req) : target === 'mac' ? !requireHermesBridge(req) : true) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
     return sendJson(res, 200, await hermesHeartbeat(req));
   }
   if (url.pathname === '/v1/hermes/bridge/runtime-config' && req.method === 'GET') {
-    if (!requireHermesBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
+    if (!requireHermesCloudBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
+    const model = String(url.searchParams.get('model') || '').trim();
+    if (!model) throw Object.assign(new Error('Hermes must identify its model before requesting provider credentials'), { statusCode: 400 });
+    assertFreeModel('ollama-cloud', model, await refreshModels());
     const stored = await query("SELECT encrypted_key FROM provider_credentials WHERE provider='ollama'");
     if (!stored.rows.length) throw Object.assign(new Error('Ollama Cloud credential is not configured'), { statusCode: 424 });
     return sendJson(res, 200, { provider: 'ollama-cloud', api_key: decryptSecret(stored.rows[0].encrypted_key) });
   }
   if (url.pathname === '/v1/capabilities/sync' && req.method === 'POST') {
     const macAuthorized = requireMacBridge(req);
-    const hermesAuthorized = requireHermesBridge(req);
+    const legacyHermesAuthorized = requireHermesBridge(req);
+    const cloudHermesAuthorized = requireHermesCloudBridge(req);
+    const hermesAuthorized = legacyHermesAuthorized || cloudHermesAuthorized;
     if (!macAuthorized && !hermesAuthorized) throw Object.assign(new Error('unauthorized capability sync'), { statusCode: 401 });
     req.body = await readJson(req, 5 * 1024 * 1024);
     const agentId = String(req.body.agent_id || '').toLowerCase();

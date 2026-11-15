@@ -306,7 +306,7 @@ async function executeJob(job) {
   const started = Date.now();
   const before = await workspaceEvidence(cwd);
   try {
-    const runtimeConfig = provider === 'ollama-cloud' ? await api('/v1/hermes/bridge/runtime-config') : null;
+    const runtimeConfig = provider === 'ollama-cloud' ? await api(`/v1/hermes/bridge/runtime-config?model=${encodeURIComponent(model)}`) : null;
     const args = ['-p', profile, '--provider', provider, '-m', model, '-t', toolsets, '--in', cwd, '--usage-file', usagePath];
     const skills = Array.isArray(job.agent_skill_allowlist) ? [...new Set(job.agent_skill_allowlist.map(String))] : [];
     if (skills.length) args.push('--skills', skills.join(','));
