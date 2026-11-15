@@ -1,3 +1,5 @@
+import { installProcessGuards } from './lib/process-guard.js';
+installProcessGuards('telegram-bridge');
 import { config } from './lib/config.js';
 import { pool, query } from './lib/db.js';
 import { decryptSecret } from './lib/secrets.js';

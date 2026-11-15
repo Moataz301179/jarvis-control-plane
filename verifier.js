@@ -1,3 +1,5 @@
+import { installProcessGuards } from './lib/process-guard.js';
+installProcessGuards('verifier');
 import { config } from './lib/config.js';
 import { pool, transaction } from './lib/db.js';
 import { executeTool, verifyEvidence } from './lib/tools.js';

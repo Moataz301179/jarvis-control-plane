@@ -1,3 +1,5 @@
+import { installProcessGuards } from './lib/process-guard.js';
+installProcessGuards('operations-loop');
 import { config } from './lib/config.js';
 import { pool, query, transaction } from './lib/db.js';
 import { queueNotification, drainNotifications } from './lib/notifications.js';
@@ -63,9 +65,11 @@ async function recoverExpiredWork() {
       await client.query("UPDATE hermes_jobs SET status=$2,claimed_by=NULL,lease_until=NULL,error=CASE WHEN $2='failed' THEN 'Hermes lease expired after maximum attempts' ELSE error END,updated_at=now() WHERE id=$1", [job.id, status]);
       await client.query('INSERT INTO audit_events (actor,action,entity_type,entity_id,detail) VALUES ($1,$2,$3,$4,$5)', ['operations', 'hermes.lease_recovered', 'hermes_job', job.id, { status, attempts: job.attempts }]);
     }
-    return { tasks: expiredTasks.rowCount, hermes: expiredHermes.rowCount };
+    const strandedFactory = await client.query("UPDATE agent_factory_runs SET status='failed',error='Dispatch interrupted before job linkage; retired by operations recovery',completed_at=now() WHERE status='running' AND started_at < now() - interval '2 hours' AND hermes_job_id IS NULL AND mac_job_id IS NULL");
+    const strandedMac = await client.query("UPDATE mac_jobs SET status='queued',started_at=NULL,error='Recovered after mac bridge interrupted a claimed job',updated_at=now() WHERE status='claimed' AND started_at < now() - interval '10 minutes'");
+    return { tasks: expiredTasks.rowCount, hermes: expiredHermes.rowCount, factory: strandedFactory.rowCount, mac: strandedMac.rowCount };
   });
-  if (recovered.tasks || recovered.hermes) console.log(`Recovered expired work: ${JSON.stringify(recovered)}`);
+  if (recovered.tasks || recovered.hermes || recovered.factory || recovered.mac) console.log(`Recovered expired work: ${JSON.stringify(recovered)}`);
 }
 
 async function reconcileObjectives() {
@@ -129,11 +133,11 @@ async function executeSchedule(schedule) {
         status = objective.status;
       }
     }
-    await query('UPDATE automation_schedules SET last_run_at=now(),last_objective_id=$2,last_status=$3,last_error=NULL,updated_at=now() WHERE id=$1', [schedule.id, objective.id, status]);
+    await query('UPDATE automation_schedules SET last_run_at=now(),last_objective_id=$2,last_status=$3,last_error=NULL,failure_count=0,updated_at=now() WHERE id=$1', [schedule.id, objective.id, status]);
     await query("INSERT INTO studio_activity (project_code,actor,event_type,detail) VALUES ($1,'Scheduler','scheduled_mission_started',$2)", [schedule.project_code, `${schedule.title} → ${objective.id}`]);
   } catch (error) {
-    await query("UPDATE automation_schedules SET last_run_at=now(),last_status='failed',last_error=$2,next_run_at=now()+interval '1 minute',updated_at=now() WHERE id=$1", [schedule.id, String(error.message).slice(0, 3000)]);
-    await queueNotification({ dedupeKey: `schedule-failed:${schedule.id}:${new Date().toISOString().slice(0,16)}`, projectCode: schedule.project_code, eventType: 'schedule.failed', severity: 'critical', title: `Scheduled mission failed: ${schedule.title}`, detail: error.message });
+    await query("UPDATE automation_schedules SET last_run_at=now(),last_status='failed',last_error=$2,failure_count=failure_count+1,next_run_at=now()+(LEAST(60, 5 * (2 ^ failure_count))::text || ' minutes')::interval,updated_at=now() WHERE id=$1", [schedule.id, String(error.message).slice(0, 3000)]);
+    await queueNotification({ dedupeKey: `schedule-failed:${schedule.id}`, projectCode: schedule.project_code, eventType: 'schedule.failed', severity: 'critical', title: `Scheduled mission failed: ${schedule.title}`, detail: error.message });
   }
 }
 
@@ -164,11 +168,11 @@ async function runDueAgentSchedules() {
     try {
       const queued = await api(`/v1/agent-definitions/${schedule.agent_definition_id}/runs`, { objective: schedule.objective, acceptance_criteria: [`Complete scheduled task: ${schedule.title}`, 'Return verifiable evidence and blockers'] });
       const run = queued.run || queued;
-      await query("UPDATE agent_schedules SET last_run_id=$2,last_status=$3,last_error=NULL,updated_at=now() WHERE id=$1", [schedule.id, run.id, run.status || 'queued']);
+      await query("UPDATE agent_schedules SET last_run_id=$2,last_status=$3,last_error=NULL,failure_count=0,updated_at=now() WHERE id=$1", [schedule.id, run.id, run.status || 'queued']);
       await query("INSERT INTO studio_activity (project_code,actor,event_type,detail) VALUES ('STUDIO','Agent Scheduler','agent_schedule_started',$1)", [`${schedule.title} → ${run.id}`]);
     } catch (error) {
-      await query("UPDATE agent_schedules SET last_status='failed',last_error=$2,next_run_at=now()+interval '1 minute',updated_at=now() WHERE id=$1", [schedule.id, String(error.message).slice(0, 3000)]);
-      await queueNotification({ dedupeKey: `agent-schedule-failed:${schedule.id}:${new Date().toISOString().slice(0,16)}`, eventType: 'agent.schedule_failed', severity: 'critical', title: `Agent schedule failed: ${schedule.title}`, detail: error.message });
+      await query("UPDATE agent_schedules SET last_status='failed',last_error=$2,failure_count=failure_count+1,next_run_at=now()+(LEAST(60, 5 * (2 ^ failure_count))::text || ' minutes')::interval,updated_at=now() WHERE id=$1", [schedule.id, String(error.message).slice(0, 3000)]);
+      await queueNotification({ dedupeKey: `agent-schedule-failed:${schedule.id}`, eventType: 'agent.schedule_failed', severity: 'critical', title: `Agent schedule failed: ${schedule.title}`, detail: error.message });
     }
   }
 }
@@ -206,7 +210,7 @@ async function auditState() {
     query('SELECT last_seen FROM workers WHERE active=true'),
     query("SELECT * FROM mac_bridge_status WHERE id='primary'"),
     query("SELECT gateway_status,last_seen FROM hermes_bridge_status WHERE id='primary'"),
-    query("SELECT * FROM agent_runs WHERE status IN ('paused','blocked') ORDER BY updated_at DESC"),
+    query("SELECT * FROM agent_runs WHERE status IN ('paused','blocked') ORDER BY updated_at DESC LIMIT 100"),
     fetch(config.hotelsVendorsHealthUrl, { signal: AbortSignal.timeout(8000) }).then((response) => response.ok).catch(() => false),
   ]);
   const now = Date.now();
@@ -230,16 +234,17 @@ async function auditState() {
 }
 
 async function cycle() {
-  await recoverExpiredWork();
-  await processWorkflowEvents(20);
-  await reconcileObjectives();
-  await ensureRoadmapTasks();
-  await runDueSchedules();
-  await runDueAgentSchedules();
-  await auditState();
-  await syncDeployments();
-  await enqueueObjectiveNotifications();
-  await drainNotifications(20);
+  const step = async (label, fn) => { try { await fn(); } catch (error) { console.error(`operations step failed (${label}):`, String(error?.message || error).slice(0, 500)); } };
+  await step('recover', recoverExpiredWork);
+  await step('workflow-events', () => processWorkflowEvents(20));
+  await step('reconcile', reconcileObjectives);
+  await step('roadmap', ensureRoadmapTasks);
+  await step('schedules', runDueSchedules);
+  await step('agent-schedules', runDueAgentSchedules);
+  await step('audit-state', auditState);
+  await step('sync-deployments', syncDeployments);
+  await step('objective-notifications', enqueueObjectiveNotifications);
+  await step('drain-notifications', () => drainNotifications(20));
   try { await runBackupIfDue(24); }
   catch (error) {
     await raiseAlert(`ops-backup-failed-${new Date().toISOString().slice(0,13)}`, 'STUDIO', 'critical', 'Database backup verification failed', error.message);
