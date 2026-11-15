@@ -40,6 +40,7 @@ import { placeAgentRingCall, agentRingConfigured, agentRingCalls } from './lib/a
 import { escalateToOwner } from './lib/escalation.js';
 import { resolveTask } from './lib/resolver.js';
 import { createMissionPlan, runtimeMandates } from './lib/mission-orchestrator.js';
+import { createAgentDefinition, listAgentDefinitions, listAgentFactoryRuns, createAgentRun as createFactoryRun, attachHermesJob, activateAgent, createAgentSchedule, listAgentSchedules, setAgentScheduleEnabled, createAgentHandoff, listAgentHandoffs, acceptAgentHandoff, reconcileAgentFactoryRun } from './lib/agent-factory.js';
 import { nextMissionState } from './lib/mission-progress.js';
 import { agentText, digest, verifyMission } from './lib/mission-verification.js';
 import { buildMissionHandoff } from './lib/mission-context.js';
@@ -585,15 +586,18 @@ async function centralControlState() {
 
 async function executionPreflight(input = {}) {
   const runtime = String(input.runtime || '').toLowerCase();
+  const hermesTarget = String(input.execution_target || 'mac') === 'cloud' ? 'cloud' : 'mac';
+  const hermesBridgeId = hermesTarget === 'cloud' ? 'cloud' : 'primary';
+  const hermesAgentId = hermesTarget === 'cloud' ? 'hermes-cloud' : 'hermes';
   const projectCode = String(input.project_code || 'STUDIO').toUpperCase();
   const [bridgeResult, capabilityResult, accountResult] = await Promise.all([
     runtime === 'hermes'
-      ? query("SELECT hostname,profile,gateway_status,last_seen,capabilities,metadata FROM hermes_bridge_status WHERE id='primary'")
+      ? query('SELECT hostname,profile,gateway_status,last_seen,capabilities,metadata FROM hermes_bridge_status WHERE id=$1', [hermesBridgeId])
       : runtime === 'mac'
         ? query("SELECT hostname,status,last_seen,capabilities,metadata FROM mac_bridge_status WHERE id='primary'")
         : Promise.resolve({ rows: [] }),
     runtime === 'hermes'
-      ? query("SELECT capability_key,capability_type,status,project_code FROM agent_capability_registry WHERE agent_id='hermes' AND status <> 'stale' AND (project_code='*' OR project_code=$1)", [projectCode])
+      ? query('SELECT capability_key,capability_type,status,project_code FROM agent_capability_registry WHERE agent_id=$1 AND status <> \'stale\' AND (project_code=\'*\' OR project_code=$2)', [hermesAgentId, projectCode])
       : Promise.resolve({ rows: [] }),
     Array.isArray(input.required_account_connections) && input.required_account_connections.length
       ? query("SELECT service,account_alias,status,expires_at FROM account_connection_sessions WHERE project_code=$1 ORDER BY created_at DESC LIMIT 100", [projectCode])
@@ -1789,7 +1793,14 @@ async function controlAgentRun(runId, action) {
   return result.rows[0];
 }
 
-function hermesWorkingDirectory(project, requested) {
+function hermesWorkingDirectory(project, requested, target = 'mac') {
+  if (target === 'cloud') {
+    const roots = { STUDIO: '/srv/jarvis/workspaces/STUDIO/repos/jarvis-control-plane', HV: '/srv/jarvis/workspaces/HV/repos/hotels-vendors-platform' };
+    const root = roots[project];
+    const candidate = path.normalize(String(requested || root).trim());
+    if (candidate !== root && !candidate.startsWith(`${root}/`)) throw Object.assign(new Error(`Hermes working directory is outside cloud project ${project}`), { statusCode: 403 });
+    return candidate;
+  }
   const roots = {
     STUDIO: '/Users/Moatazi/Documents/ChatGPT',
     HV: '/Users/Moatazi/hotels-vendors-new',
@@ -1853,13 +1864,13 @@ async function reportSkillInstallation(body) {
 
 async function hermesState() {
   const [bridge, runtime, jobs, memories, team] = await Promise.all([
-    query("SELECT * FROM hermes_bridge_status WHERE id='primary'"),
+    query("SELECT * FROM hermes_bridge_status WHERE id IN ('cloud','primary') ORDER BY CASE id WHEN 'cloud' THEN 0 ELSE 1 END"),
     query("SELECT * FROM employee_runtimes WHERE id='hermes-cto'"),
     query('SELECT * FROM hermes_jobs ORDER BY created_at DESC LIMIT 100'),
     query("SELECT id,project_code,agent_id,memory_type,title,confidence,updated_at FROM shared_memory_entries WHERE status='active' ORDER BY updated_at DESC LIMIT 20"),
     query('SELECT * FROM hermes_team_roster ORDER BY title'),
   ]);
-  return { bridge: bridge.rows[0] || { status: 'not_connected', gateway_status: 'unknown' }, runtime: runtime.rows[0] || null, jobs: jobs.rows, memories: memories.rows, team: team.rows };
+  return { bridge: bridge.rows.find((row) => row.id === 'cloud') || bridge.rows.find((row) => row.id === 'primary') || { status: 'not_connected', gateway_status: 'unknown' }, bridges: bridge.rows, runtime: runtime.rows[0] || null, jobs: jobs.rows, memories: memories.rows, team: team.rows };
 }
 
 async function claudeState() {
@@ -1885,23 +1896,29 @@ async function createHermesJob(body) {
   const project = String(body.project_code || 'STUDIO').toUpperCase();
   const title = String(body.title || '').trim();
   const instruction = String(body.instruction || '').trim();
+  const executionTarget = String(body.execution_target || 'cloud').toLowerCase();
+  if (!['cloud','mac'].includes(executionTarget)) throw Object.assign(new Error('execution_target must be cloud or mac'), { statusCode: 400 });
   if (!/^(STUDIO|HV)$/.test(project)) throw Object.assign(new Error('Choose a valid project'), { statusCode: 400 });
   if (!title || title.length > 200 || !instruction || instruction.length > 12000) throw Object.assign(new Error('Job title and instruction are required; instruction must be <= 12000 characters'), { statusCode: 400 });
   if (isProhibitedFinancialExecution(`${title} ${instruction}`)) throw Object.assign(new Error('JARVIS is not allowed to access payments, cards, bank accounts or financial wallets'), { statusCode: 403 });
   if (!(await memoryPermission('hermes-cto', project, 'read'))) throw Object.assign(new Error(`Hermes is not authorized for project ${project}`), { statusCode: 403 });
-  const specialist = routeHermesTask({ title, instruction, requestedRole: body.agent_role || body.role || body.hermes_profile });
+  const factoryContext = body.agent_factory_context && typeof body.agent_factory_context === 'object' ? body.agent_factory_context : null;
+  const specialist = factoryContext
+    ? { role: `factory_${String(factoryContext.slug || 'agent').replace(/[^a-z0-9_]/gi,'_')}`, profile: String(factoryContext.hermes_profile || 'default'), title: String(factoryContext.name || 'JARVIS Specialist'), toolsets: body.toolsets || [] }
+    : routeHermesTask({ title, instruction, requestedRole: body.agent_role || body.role || body.hermes_profile });
   const requestedToolsets = Array.isArray(body.toolsets) && body.toolsets.length ? body.toolsets.map(String) : specialist.toolsets;
   const toolsets = normalizeHermesToolsets(requestedToolsets);
   if (!toolsets.length) throw Object.assign(new Error('At least one approved Hermes toolset is required'), { statusCode: 400 });
   const preflight = await executionPreflight({
     runtime: 'hermes',
+    execution_target: executionTarget,
     project_code: project,
     toolsets,
     required_account_connections: body.required_account_connections,
     request_id: body.request_id,
   });
   if (!preflight.ready) throw Object.assign(new Error(`Execution preflight failed: ${preflight.blockers.map((item) => item.message).join('; ')}`), { statusCode: 424, preflight });
-  const workingDirectory = hermesWorkingDirectory(project, body.working_directory);
+  const workingDirectory = hermesWorkingDirectory(project, body.working_directory, executionTarget);
   const actionKey = classifyAction(`${title} ${instruction}`, 'routine_read');
   const requestedRisk = String(body.risk || (actionKey === 'sandbox_build' ? 'review' : actionKey === 'routine_read' ? 'safe' : 'danger'));
   const autonomy = body.approval_policy === 'owner'
@@ -1910,13 +1927,47 @@ async function createHermesJob(body) {
   const risk = autonomy.decision === 'autonomous' ? requestedRisk : 'danger';
   const status = autonomy.decision === 'autonomous' ? 'queued' : 'awaiting_approval';
   const taskClass = String(body.task_class || (actionKey === 'sandbox_build' ? 'build' : 'general'));
-  const route = await resolveCentralModelRoute({ agentId: 'hermes', projectCode: project, taskClass });
-  const row = await query("INSERT INTO hermes_jobs (project_code,title,instruction,status,risk,toolsets,working_directory,requested_by,model_provider,model,agent_role,hermes_profile) VALUES ($1,$2,$3,$4,$5,$6,$7,'owner',$8,$9,$10,$11) RETURNING *", [project, title, instruction, status, risk, JSON.stringify(toolsets), workingDirectory, route.provider, route.model, specialist.role, specialist.profile]);
+  let route;
+  if (body.agent_factory_run_id) {
+    const provider=String(body.model_provider||''); const model=String(body.model||'').trim();
+    if (provider !== 'ollama-cloud'||!model||model.length>180) throw Object.assign(new Error('Agent factory run requires an Ollama Cloud model route; local models are disabled'),{statusCode:400});
+    const catalog=await refreshModels();
+    assertFreeModel(provider,model,catalog);
+    route={provider,model,source:'agent_factory_definition'};
+  } else route = await resolveCentralModelRoute({ agentId: 'hermes', projectCode: project, taskClass });
+  if (route.provider !== 'ollama-cloud') throw Object.assign(new Error(`Hermes execution requires Ollama Cloud; current route resolved to ${route.provider}`), { statusCode: 424 });
+  const factorySkills=body.agent_skill_allowlist&&Array.isArray(body.agent_skill_allowlist)?[...new Set(body.agent_skill_allowlist.map(String))]:[];
+  const factoryData=factoryContext?JSON.stringify(factoryContext):'{}';
+  const row = await query("INSERT INTO hermes_jobs (project_code,title,instruction,status,risk,toolsets,working_directory,requested_by,model_provider,model,agent_role,hermes_profile,agent_factory_context,agent_skill_allowlist,execution_target) VALUES ($1,$2,$3,$4,$5,$6,$7,'owner',$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14) RETURNING *", [project, title, instruction, status, risk, JSON.stringify(toolsets), workingDirectory, route.provider, route.model, specialist.role, specialist.profile, factoryData, JSON.stringify(factorySkills), executionTarget]);
   await query("INSERT INTO studio_activity (project_code,actor,event_type,detail) VALUES ($1,'JARVIS','hermes_job_queued',$2)", [project, title]);
   await query('INSERT INTO audit_events (actor,action,entity_type,entity_id,detail) VALUES ($1,$2,$3,$4,$5)', ['jarvis', 'hermes.job_created', 'hermes_job', row.rows[0].id, { project, actionKey, autonomy, specialist: { role: specialist.role, profile: specialist.profile, title: specialist.title }, preflight: { ready: preflight.ready, receiptId: preflight.receipt_id, checks: preflight.checks }, model: { provider: route.provider, model: route.model, source: route.source } }]);
   await enqueueWorkflowEvent({ eventType: 'agent_job.created', projectCode: project, entityType: 'hermes_job', entityId: row.rows[0].id, dedupeKey: `hermes:${row.rows[0].id}:created`, producer: 'jarvis', payload: { title, status, actionKey, autonomy, modelProvider: route.provider, model: route.model } });
   await recordTrace('agent_job.created', { entityType: 'hermes_job', entityId: row.rows[0].id, detail: { project, title, status, actionKey, autonomy, modelProvider: route.provider, model: route.model } });
   return { ...row.rows[0], preflight };
+}
+
+async function dispatchAgentFactoryRun(runId, actor = 'owner') {
+  const rows = await query(`SELECT r.id AS run_id,r.objective,r.acceptance_criteria,r.hermes_job_id,r.status AS run_status,d.* FROM agent_factory_runs r JOIN agent_definitions d ON d.id=r.agent_definition_id WHERE r.id=$1`, [runId]);
+  if (!rows.rows.length) throw Object.assign(new Error('agent factory run not found'), { statusCode: 404 });
+  const row = rows.rows[0];
+  if (row.hermes_job_id || row.run_status !== 'queued') throw Object.assign(new Error('agent factory run is already dispatched or not queued'), { statusCode: 409 });
+  const criteria = Array.isArray(row.acceptance_criteria) ? row.acceptance_criteria : [];
+  const instruction = `${row.objective}\n\nAgent contract: ${row.description || row.name}; policy=${row.policy_profile}; memory scope=${JSON.stringify(row.memory_scope || [])}.\nAcceptance criteria:\n${criteria.map((item) => `- ${item}`).join('\n') || '- Return concrete evidence, limitations, and next steps.'}`;
+  const job = await createHermesJob({
+    project_code: row.project_code, title: `[${row.name}] ${row.objective.slice(0,160)}`, instruction,
+    execution_target: row.execution_target,
+    toolsets: row.tool_allowlist, hermes_profile: row.hermes_profile,
+    approval_policy: row.approval_policy === 'require_owner' || row.policy_profile === 'experimental' ? 'owner' : undefined,
+    risk: row.approval_policy === 'read_only' ? 'safe' : 'review',
+    agent_factory_run_id: row.run_id, model_provider: row.model_provider, model: row.model,
+    agent_factory_context: { slug: row.slug, name: row.name, description: row.description, policy_profile: row.policy_profile, approval_policy: row.approval_policy, hermes_profile: row.hermes_profile, tool_allowlist: row.tool_allowlist, skill_allowlist: row.skill_allowlist, memory_scope: row.memory_scope, workspace: row.workspace },
+    agent_skill_allowlist: row.skill_allowlist,
+    working_directory: row.workspace || undefined,
+  });
+  const run = await attachHermesJob(row.run_id, job);
+  await query("UPDATE agent_definitions SET status='testing',updated_at=now() WHERE id=$1 AND status='draft'", [row.agent_definition_id]);
+  await query('INSERT INTO audit_events(actor,action,entity_type,entity_id,detail) VALUES($1,$2,$3,$4,$5)', [actor, 'agent.factory_dispatched', 'agent_factory_run', row.run_id, { hermesJobId: job.id, provider: job.model_provider, model: job.model }]);
+  return { run, job };
 }
 
 async function createProjectBuildRequest(projectCode, body, actor = 'owner') {
@@ -1934,21 +1985,27 @@ async function createProjectBuildRequest(projectCode, body, actor = 'owner') {
 async function approveHermesJob(id, actor = 'owner') {
   const result = await query("UPDATE hermes_jobs SET status='queued',updated_at=now() WHERE id=$1 AND status='awaiting_approval' RETURNING *", [id]);
   if (!result.rows.length) throw Object.assign(new Error('approvable Hermes job not found'), { statusCode: 404 });
+  await query("UPDATE agent_factory_runs SET status='queued' WHERE hermes_job_id=$1 AND status='awaiting_approval'", [id]);
   await query('INSERT INTO audit_events (actor,action,entity_type,entity_id,detail) VALUES ($1,$2,$3,$4,$5)', [actor, 'hermes.job_approved', 'hermes_job', id, { risk: result.rows[0].risk }]);
   return result.rows[0];
 }
 
 async function hermesHeartbeat(req) {
   const body = await readJson(req);
+  const target = String(body.target || 'mac');
+  if (!['cloud','mac'].includes(target)) throw Object.assign(new Error('invalid Hermes bridge target'), { statusCode: 400 });
+  const bridgeId = target === 'cloud' ? 'cloud' : 'primary';
+  const agentId = target === 'cloud' ? 'hermes-cloud' : 'hermes';
   return transaction(async (client) => {
-    const result = await client.query("INSERT INTO hermes_bridge_status (id,hostname,profile,gateway_status,gateway_url,capabilities,metadata,last_seen,updated_at) VALUES ('primary',$1,$2,$3,$4,$5,$6,now(),now()) ON CONFLICT (id) DO UPDATE SET hostname=EXCLUDED.hostname,profile=EXCLUDED.profile,gateway_status=EXCLUDED.gateway_status,gateway_url=EXCLUDED.gateway_url,capabilities=EXCLUDED.capabilities,metadata=EXCLUDED.metadata,last_seen=now(),updated_at=now() RETURNING *", [String(body.hostname || ''), String(body.profile || 'default'), String(body.gateway_status || 'unknown'), String(body.gateway_url || ''), JSON.stringify(Array.isArray(body.capabilities) ? body.capabilities : []), JSON.stringify(body.metadata || {})]);
+    const result = await client.query("INSERT INTO hermes_bridge_status (id,hostname,profile,gateway_status,gateway_url,capabilities,metadata,last_seen,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,now(),now()) ON CONFLICT (id) DO UPDATE SET hostname=EXCLUDED.hostname,profile=EXCLUDED.profile,gateway_status=EXCLUDED.gateway_status,gateway_url=EXCLUDED.gateway_url,capabilities=EXCLUDED.capabilities,metadata=EXCLUDED.metadata,last_seen=now(),updated_at=now() RETURNING *", [bridgeId, String(body.hostname || ''), String(body.profile || 'default'), String(body.gateway_status || 'unknown'), String(body.gateway_url || ''), JSON.stringify(Array.isArray(body.capabilities) ? body.capabilities : []), JSON.stringify(body.metadata || {})]);
     const active = String(body.gateway_status || '') === 'online';
+    const runtimeId = target === 'cloud' ? 'hermes-cto' : 'hermes-mac';
     await client.query(`INSERT INTO employee_runtimes (id,employee_name,office,role,runtime_type,status,capabilities,project_scope,last_seen,metadata)
-      VALUES ('hermes-cto','Hermes CTO','Engineering','Execution supervisor','hermes',$1,$2,$3,now(),$4)
-      ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status,capabilities=EXCLUDED.capabilities,project_scope=EXCLUDED.project_scope,last_seen=now(),metadata=employee_runtimes.metadata || EXCLUDED.metadata,updated_at=now()`, [active ? 'active' : 'degraded', JSON.stringify(Array.isArray(body.capabilities) ? body.capabilities : []), JSON.stringify(['STUDIO','HV']), JSON.stringify({ ...(body.metadata || {}), bridge_status: body.gateway_status || 'unknown', hostname: body.hostname || null })]);
-    await client.query("UPDATE agent_registry SET status=$1,endpoint=$2,last_seen=now(),updated_at=now() WHERE id='hermes'", [active ? 'active' : 'degraded', String(body.gateway_url || '')]);
+      VALUES ($5,$6,'Engineering','Execution supervisor','hermes',$1,$2,$3,now(),$4)
+      ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status,capabilities=EXCLUDED.capabilities,project_scope=EXCLUDED.project_scope,last_seen=now(),metadata=employee_runtimes.metadata || EXCLUDED.metadata,updated_at=now()`, [active ? 'active' : 'degraded', JSON.stringify(Array.isArray(body.capabilities) ? body.capabilities : []), JSON.stringify(['STUDIO','HV']), JSON.stringify({ ...(body.metadata || {}), bridge_status: body.gateway_status || 'unknown', hostname: body.hostname || null }), runtimeId, target === 'cloud' ? 'Hermes CTO' : 'Hermes Mac Runtime']);
+    await client.query("INSERT INTO agent_registry(id,name,agent_type,provider,status,endpoint,last_seen,capabilities,allowed_commands) VALUES($1,$2,'hermes',$3,$4,$5,now(),$6,'[]'::jsonb) ON CONFLICT(id) DO UPDATE SET provider=EXCLUDED.provider,status=EXCLUDED.status,endpoint=EXCLUDED.endpoint,last_seen=now(),capabilities=EXCLUDED.capabilities,updated_at=now()", [agentId, target === 'cloud' ? 'Hermes Cloud Runtime' : 'Hermes Mac Runtime', String(body.metadata?.provider || ''), active ? 'active' : 'degraded', String(body.gateway_url || ''), JSON.stringify(Array.isArray(body.capabilities) ? body.capabilities : [])]);
     const teamProfiles = new Set(Array.isArray(body.metadata?.profiles) ? body.metadata.profiles.map(String) : []);
-    if (teamProfiles.size) {
+    if (target === 'cloud' && teamProfiles.size) {
       for (const member of HERMES_TEAM) await client.query('UPDATE hermes_team_roster SET status=$2,last_verified_at=now(),updated_at=now() WHERE profile=$1', [member.profile, teamProfiles.has(member.profile) ? 'ready' : 'offline']);
     }
     await client.query("UPDATE studio_alerts SET status='resolved',updated_at=now() WHERE status='open' AND (title ILIKE '%Hermes%offline%' OR detail ILIKE '%Hermes%offline%')");
@@ -1956,17 +2013,23 @@ async function hermesHeartbeat(req) {
   });
 }
 
-async function claimHermesJob() {
+async function claimHermesJob(target = 'cloud') {
   const claimed = await transaction(async (client) => {
-    const job = await client.query("SELECT * FROM hermes_jobs WHERE status='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1");
+    const job = await client.query("SELECT * FROM hermes_jobs WHERE status='queued' AND execution_target=$1 ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1", [target]);
     if (!job.rows.length) return null;
-    const result = await client.query("UPDATE hermes_jobs SET status='claimed',claimed_by='hermes-bridge',attempts=attempts+1,lease_until=now()+interval '10 minutes',started_at=now(),updated_at=now() WHERE id=$1 RETURNING *", [job.rows[0].id]);
-    await audit(client, 'hermes-bridge', 'hermes.job_claimed', 'hermes_job', job.rows[0].id, { project: job.rows[0].project_code });
+    const result = await client.query("UPDATE hermes_jobs SET status='claimed',claimed_by=$2,attempts=attempts+1,lease_until=now()+interval '10 minutes',started_at=now(),updated_at=now() WHERE id=$1 RETURNING *", [job.rows[0].id, `hermes-${target}-bridge`]);
+    await client.query("UPDATE agent_factory_runs SET status='running',started_at=now() WHERE hermes_job_id=$1 AND status='queued'", [job.rows[0].id]);
+    await audit(client, `hermes-${target}-bridge`, 'hermes.job_claimed', 'hermes_job', job.rows[0].id, { project: job.rows[0].project_code, target });
     return result.rows[0];
   });
   if (!claimed) return null;
-  const memories = await listSharedMemory({ projectCode: claimed.project_code, agentId: 'hermes-cto', limit: 20 });
-  return { ...claimed, memory_context: memories.map((memory) => ({ title: memory.title, content: memory.content, confidence: memory.confidence, source_ref: memory.source_ref })) };
+  const factoryMemoryScope = Array.isArray(claimed.agent_factory_context?.memory_scope) ? claimed.agent_factory_context.memory_scope : null;
+  const memories = factoryMemoryScope && !factoryMemoryScope.includes(claimed.project_code)
+    ? []
+    : await listSharedMemory({ projectCode: claimed.project_code, agentId: 'hermes-cto', limit: 20 });
+  const owner = await query('SELECT display_name,background_summary,roles,preferences,boundaries FROM owner_profile WHERE id=1').catch(() => ({ rows: [] }));
+  const profile = owner.rows[0] || null;
+  return { ...claimed, owner_context: profile, memory_context: memories.map((memory) => ({ title: memory.title, content: memory.content, confidence: memory.confidence, source_ref: memory.source_ref })) };
 }
 
 async function renewHermesJobLease(id) {
@@ -1981,7 +2044,8 @@ async function renewHermesJobLease(id) {
 function verifyHermesDelivery(job, body) {
   const toolsets = new Set(Array.isArray(job.toolsets) ? job.toolsets : []);
   const result = String(body.result || '');
-  const mutationRole = job.agent_role ? ['implementation_lead','deployment_operator'].includes(job.agent_role) : ['file','terminal','code_execution'].some((tool) => toolsets.has(tool));
+  const factoryAgent = Boolean(job.agent_factory_context?.slug);
+  const mutationRole = factoryAgent ? ['file','terminal','code_execution','computer_use'].some((tool) => toolsets.has(tool)) : job.agent_role ? ['implementation_lead','deployment_operator'].includes(job.agent_role) : ['file','terminal','code_execution'].some((tool) => toolsets.has(tool));
   const workspaceRequired = job.agent_role ? mutationRole : ['file','terminal','code_execution'].some((tool) => toolsets.has(tool));
   const workspace = body.evidence?.workspace;
   const checks = {
@@ -1990,7 +2054,7 @@ function verifyHermesDelivery(job, body) {
     workspacePathMatched: !workspaceRequired || (workspace?.before?.cwd === job.working_directory && workspace?.after?.cwd === job.working_directory),
   };
   checks.browserTargetMatched = accountVerificationMatches(job, result);
-  const allowedMcp = new Set(['file','filesystem','terminal','shell','bash','code_execution','web','browser','search','memory','todo','clarify','skills','session_search','kanban','desktop_commander']);
+  const allowedMcp = new Set(['file','filesystem','terminal','shell','bash','code_execution','web','browser','search','memory','todo','clarify','skills','session_search','kanban','desktop_commander','callme']);
   const referencedMcp = [...new Set([...result.matchAll(/mcp__([A-Za-z0-9_]+)__/g)].map((match) => match[1].toLowerCase()))];
   checks.toolsetsHonored = referencedMcp.every((name) => allowedMcp.has(name));
 
@@ -2023,6 +2087,7 @@ async function completeHermesJob(id, body) {
   const result = await query("UPDATE hermes_jobs SET status=$2,result=$3,evidence=$4,usage=$5,error=$6,verification=$7,completed_at=now(),updated_at=now() WHERE id=$1 AND status IN ('claimed','running') RETURNING *", [id, status, body.result ? String(body.result).slice(0, 100000) : null, JSON.stringify(body.evidence || {}), JSON.stringify(body.usage || {}), body.error ? String(body.error).slice(0, 5000) : verificationError, JSON.stringify(verification)]);
   if (!result.rows.length) throw Object.assign(new Error('claimed Hermes job not found'), { statusCode: 404 });
   const job = result.rows[0];
+  await reconcileAgentFactoryRun(job);
   await recordTrace('agent_job.completed', { entityType: 'hermes_job', entityId: id, detail: { status, verification } });
   if (status === 'succeeded' && body.result) await createSharedMemory({ project_code: job.project_code, agent_id: 'hermes-cto', memory_type: 'job_result', title: `Hermes result: ${job.title}`.slice(0, 240), content: String(body.result).slice(0, 20000), tags: ['hermes','job-result'], source_ref: `hermes_job:${job.id}`, confidence: 'verified' }, 'hermes-cto');
   const usage = body.usage || {};
@@ -2683,19 +2748,28 @@ async function handle(req, res) {
     if (!requireHermesBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
     return sendJson(res, 200, await hermesHeartbeat(req));
   }
+  if (url.pathname === '/v1/hermes/bridge/runtime-config' && req.method === 'GET') {
+    if (!requireHermesBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
+    const stored = await query("SELECT encrypted_key FROM provider_credentials WHERE provider='ollama'");
+    if (!stored.rows.length) throw Object.assign(new Error('Ollama Cloud credential is not configured'), { statusCode: 424 });
+    return sendJson(res, 200, { provider: 'ollama-cloud', api_key: decryptSecret(stored.rows[0].encrypted_key) });
+  }
   if (url.pathname === '/v1/capabilities/sync' && req.method === 'POST') {
     const macAuthorized = requireMacBridge(req);
     const hermesAuthorized = requireHermesBridge(req);
     if (!macAuthorized && !hermesAuthorized) throw Object.assign(new Error('unauthorized capability sync'), { statusCode: 401 });
     req.body = await readJson(req, 5 * 1024 * 1024);
     const agentId = String(req.body.agent_id || '').toLowerCase();
-    if (hermesAuthorized && agentId !== 'hermes') throw Object.assign(new Error('Hermes bridge may sync only Hermes capabilities'), { statusCode: 403 });
+    if (hermesAuthorized && !['hermes','hermes-cloud'].includes(agentId)) throw Object.assign(new Error('Hermes bridge may sync only Hermes capabilities'), { statusCode: 403 });
     if (macAuthorized && !['codex','claude'].includes(agentId)) throw Object.assign(new Error('Mac bridge may sync only Codex and Claude capabilities'), { statusCode: 403 });
     return sendJson(res, 200, await syncAgentCapabilities(req.body, 'bridge', { allowVerified: false }));
   }
   if (url.pathname === '/v1/hermes/bridge/jobs/next' && req.method === 'POST') {
     if (!requireHermesBridge(req)) throw Object.assign(new Error('unauthorized Hermes bridge'), { statusCode: 401 });
-    return sendJson(res, 200, { job: await claimHermesJob() });
+    const body = await readJson(req);
+    const target = String(body.target || 'mac');
+    if (!['cloud','mac'].includes(target)) throw Object.assign(new Error('invalid Hermes bridge target'), { statusCode: 400 });
+    return sendJson(res, 200, { job: await claimHermesJob(target) });
   }
   const hermesLeaseMatch = url.pathname.match(/^\/v1\/hermes\/bridge\/jobs\/([0-9a-f-]+)\/lease$/);
   if (req.method === 'POST' && hermesLeaseMatch) {
@@ -2877,6 +2951,44 @@ async function handle(req, res) {
     return sendJson(res, 200, transcript);
   }
   if (req.method === 'GET' && url.pathname === '/v1/hermes/state') return sendJson(res, 200, await hermesState());
+  if (url.pathname === '/v1/agent-factory/catalog' && req.method === 'GET') {
+    await requirePermission(req, 'agent:read');
+    const target = url.searchParams.get('execution_target') === 'mac' ? 'mac' : 'cloud';
+    const bridgeId = target === 'cloud' ? 'cloud' : 'primary';
+    const agentId = target === 'cloud' ? 'hermes-cloud' : 'hermes';
+    const [bridge, skills, integrations, runtimeCapabilities] = await Promise.all([
+      query('SELECT metadata,last_seen,gateway_status FROM hermes_bridge_status WHERE id=$1', [bridgeId]),
+      query("SELECT skill_name,category,status,repository,license FROM jarvis_skill_catalog ORDER BY category,skill_name"),
+      query('SELECT id,repository,source_kind,license,status,integration_notes FROM jarvis_capability_sources ORDER BY repository'),
+      query("SELECT capability_key,display_name,capability_type,description,status,source_ref FROM agent_capability_registry WHERE agent_id=$1 AND status <> 'stale' AND capability_type IN ('skill','toolset','mcp','plugin','connection') ORDER BY capability_type,display_name", [agentId]),
+    ]);
+    const connectedSkills = new Set(runtimeCapabilities.rows.filter((item) => item.capability_type === 'skill' && item.status === 'connected').map((item) => item.display_name.toLowerCase()));
+    const skillRows = skills.rows.map((item) => ({ ...item, runtime_connected: connectedSkills.has(item.skill_name.toLowerCase()) }));
+    return sendJson(res, 200, { execution_target: target, profiles: bridge.rows[0]?.metadata?.profiles || [], bridgeOnline: bridge.rows[0]?.gateway_status === 'online' && Date.now()-new Date(bridge.rows[0].last_seen).getTime()<120000, toolsets: [...(await import('./lib/hermes-capabilities.js')).HERMES_ALLOWED_TOOLSETS], skills: skillRows, integrations: integrations.rows, runtimeCapabilities: runtimeCapabilities.rows });
+  }
+  if (req.method === 'GET' && url.pathname === '/v1/agent-definitions') { await requirePermission(req, 'agent:read'); return sendJson(res, 200, { agents: await listAgentDefinitions(url.searchParams.get('project_code')) }); }
+  if (req.method === 'POST' && url.pathname === '/v1/agent-definitions') { await requirePermission(req, 'agent:write'); req.body = await readJson(req); return sendJson(res, 201, await createAgentDefinition(req.body, req.principal.id)); }
+  if (req.method === 'GET' && url.pathname === '/v1/agent-factory/runs') { await requirePermission(req, 'agent:read'); return sendJson(res, 200, { runs: await listAgentFactoryRuns(url.searchParams.get('limit')) }); }
+  if (req.method === 'GET' && url.pathname === '/v1/agent-schedules') { await requirePermission(req, 'agent:read'); return sendJson(res, 200, { schedules: await listAgentSchedules() }); }
+  const agentScheduleMatch = url.pathname.match(/^\/v1\/agent-schedules\/([0-9a-f-]+)$/);
+  if (req.method === 'PATCH' && agentScheduleMatch) { await requirePermission(req, 'schedule:write'); req.body = await readJson(req); return sendJson(res, 200, await setAgentScheduleEnabled(agentScheduleMatch[1], req.body.enabled, req.principal.id)); }
+  if (req.method === 'POST' && url.pathname === '/v1/agent-handoffs') { await requirePermission(req, 'agent:write'); req.body = await readJson(req); return sendJson(res, 201, await createAgentHandoff(req.body, req.principal.id)); }
+  if (req.method === 'GET' && url.pathname === '/v1/agent-handoffs') { await requirePermission(req, 'agent:read'); return sendJson(res, 200, { handoffs: await listAgentHandoffs(url.searchParams.get('agent_id')) }); }
+  const factoryDispatchMatch = url.pathname.match(/^\/v1\/agent-factory-runs\/([0-9a-f-]+)\/dispatch$/);
+  if (req.method === 'POST' && factoryDispatchMatch) { await requirePermission(req, 'agent:write'); return sendJson(res, 202, await dispatchAgentFactoryRun(factoryDispatchMatch[1], req.principal.id)); }
+  const factoryRunMatch = url.pathname.match(/^\/v1\/agent-definitions\/([0-9a-f-]+)\/(runs|activate|schedules)$/);
+  if (factoryRunMatch && req.method === 'POST' && factoryRunMatch[2] === 'runs') {
+    await requirePermission(req, 'agent:write'); req.body = await readJson(req);
+    const run = await createFactoryRun(factoryRunMatch[1], req.body, req.principal.id);
+    return sendJson(res, 202, await dispatchAgentFactoryRun(run.id, req.principal.id));
+  }
+  if (factoryRunMatch && req.method === 'POST' && factoryRunMatch[2] === 'activate') { await requirePermission(req, 'agent:write'); return sendJson(res, 200, await activateAgent(factoryRunMatch[1], req.principal.id)); }
+  if (factoryRunMatch && req.method === 'POST' && factoryRunMatch[2] === 'schedules') { await requirePermission(req, 'schedule:write'); req.body = await readJson(req); return sendJson(res, 201, await createAgentSchedule(factoryRunMatch[1], req.body, req.principal.id)); }
+  const handoffAcceptMatch = url.pathname.match(/^\/v1\/agent-handoffs\/([0-9a-f-]+)\/accept$/);
+  if (req.method === 'POST' && handoffAcceptMatch) {
+    await requirePermission(req, 'agent:write'); const accepted = await acceptAgentHandoff(handoffAcceptMatch[1], req.principal.id);
+    return sendJson(res, 202, { ...accepted, ...(await dispatchAgentFactoryRun(accepted.run.id, req.principal.id)) });
+  }
   if (req.method === 'GET' && url.pathname === '/v1/agents/claude/state') return sendJson(res, 200, await claudeState());
   if (req.method === 'GET' && url.pathname === '/v1/hermes/team') {
     const rows = await query('SELECT * FROM hermes_team_roster ORDER BY title');

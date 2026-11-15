@@ -145,6 +145,34 @@ async function runDueSchedules() {
   }
 }
 
+async function claimNextAgentSchedule() {
+  return transaction(async (client) => {
+    const result = await client.query(`SELECT s.* FROM agent_schedules s WHERE s.enabled=true AND s.next_run_at<=now()
+      AND (s.last_run_id IS NULL OR NOT EXISTS (SELECT 1 FROM agent_factory_runs r WHERE r.id=s.last_run_id AND r.status IN ('queued','awaiting_approval','running')))
+      ORDER BY s.next_run_at FOR UPDATE OF s SKIP LOCKED LIMIT 1`);
+    if (!result.rows.length) return null;
+    const schedule = result.rows[0];
+    await client.query("UPDATE agent_schedules SET next_run_at=now()+($2::text||' minutes')::interval,updated_at=now() WHERE id=$1", [schedule.id, schedule.interval_minutes]);
+    return schedule;
+  });
+}
+
+async function runDueAgentSchedules() {
+  for (let count = 0; count < 5 && !stopping; count += 1) {
+    const schedule = await claimNextAgentSchedule();
+    if (!schedule) return;
+    try {
+      const queued = await api(`/v1/agent-definitions/${schedule.agent_definition_id}/runs`, { objective: schedule.objective, acceptance_criteria: [`Complete scheduled task: ${schedule.title}`, 'Return verifiable evidence and blockers'] });
+      const run = queued.run || queued;
+      await query("UPDATE agent_schedules SET last_run_id=$2,last_status=$3,last_error=NULL,updated_at=now() WHERE id=$1", [schedule.id, run.id, run.status || 'queued']);
+      await query("INSERT INTO studio_activity (project_code,actor,event_type,detail) VALUES ('STUDIO','Agent Scheduler','agent_schedule_started',$1)", [`${schedule.title} → ${run.id}`]);
+    } catch (error) {
+      await query("UPDATE agent_schedules SET last_status='failed',last_error=$2,next_run_at=now()+interval '1 minute',updated_at=now() WHERE id=$1", [schedule.id, String(error.message).slice(0, 3000)]);
+      await queueNotification({ dedupeKey: `agent-schedule-failed:${schedule.id}:${new Date().toISOString().slice(0,16)}`, eventType: 'agent.schedule_failed', severity: 'critical', title: `Agent schedule failed: ${schedule.title}`, detail: error.message });
+    }
+  }
+}
+
 async function enqueueObjectiveNotifications() {
   const result = await query("SELECT id,title,status,updated_at FROM objectives WHERE status IN ('completed','failed') AND updated_at>now()-interval '2 days' ORDER BY updated_at DESC LIMIT 50");
   for (const objective of result.rows) {
@@ -207,6 +235,7 @@ async function cycle() {
   await reconcileObjectives();
   await ensureRoadmapTasks();
   await runDueSchedules();
+  await runDueAgentSchedules();
   await auditState();
   await syncDeployments();
   await enqueueObjectiveNotifications();

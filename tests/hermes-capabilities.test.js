@@ -9,5 +9,6 @@ test('authenticated browser work allows the Hermes browser and account toolsets'
 });
 
 test('unsafe or unknown Hermes toolsets are rejected', () => {
-  assert.deepEqual(normalizeHermesToolsets(['unknown', 'shell', 'cronjob']), []);
+  assert.deepEqual(normalizeHermesToolsets(['unknown', 'shell']), []);
+  assert.deepEqual(normalizeHermesToolsets(['cronjob', 'a2a']), ['cronjob', 'a2a']);
 });

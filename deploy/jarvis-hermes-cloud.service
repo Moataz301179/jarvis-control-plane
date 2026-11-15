@@ -1,0 +1,33 @@
+[Unit]
+Description=JARVIS Hermes Cloud Agent Runtime
+After=network-online.target jarvis-api.service
+Wants=network-online.target jarvis-api.service
+
+[Service]
+Type=simple
+User=jarvis-ops
+Group=jarvis-ops
+WorkingDirectory=/srv/jarvis/current
+EnvironmentFile=/srv/jarvis/shared/hermes-cloud.env
+Environment=JARVIS_HERMES_EXECUTION_TARGET=cloud
+Environment=HERMES_HOME=/home/jarvis-ops/.hermes
+Environment=HERMES_BINARY=/home/jarvis-ops/.local/bin/hermes
+Environment=HERMES_PROFILE=chief
+Environment=HERMES_PROVIDER=ollama-cloud
+Environment=HERMES_MODEL=deepseek-v4.1-flash
+Environment=HERMES_GATEWAY_URL=http://127.0.0.1:8644
+Environment=JARVIS_HERMES_BRIDGE_URL=http://127.0.0.1:3100
+ExecStart=/usr/bin/node /srv/jarvis/current/hermes-bridge/bridge.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/jarvis /home/jarvis-ops/.hermes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
