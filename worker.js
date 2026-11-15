@@ -52,7 +52,11 @@ async function execute(task) {
   try {
     const evidence = await executeTool(task.tool, task.input);
     await transaction(async (client) => {
-      await client.query("UPDATE tasks SET status='executed',evidence=$2,lease_owner=NULL,lease_kind='worker',lease_until=NULL,error=NULL,updated_at=now() WHERE id=$1", [task.id, JSON.stringify(evidence)]);
+      const completed = await client.query("UPDATE tasks SET status='executed',evidence=$2,lease_owner=NULL,lease_kind='worker',lease_until=NULL,error=NULL,updated_at=now() WHERE id=$1 AND status='running' AND lease_owner=$3", [task.id, JSON.stringify(evidence), config.workerId]);
+      if (!completed.rowCount) {
+        console.log(`worker ${config.workerId}: task ${task.id} lease was recovered; discarding stale completion`);
+        return;
+      }
       await client.query('UPDATE workers SET current_task_id=NULL,last_seen=now() WHERE id=$1', [config.workerId]);
       await audit(client, `worker:${config.workerId}`, 'task.executed', 'task', task.id, { httpStatus: evidence.httpStatus, target: evidence.target });
     });
@@ -60,10 +64,14 @@ async function execute(task) {
   } catch (error) {
     await transaction(async (client) => {
       const retry = task.attempts + 1 < task.max_attempts;
-      await client.query(
-        "UPDATE tasks SET status=$2,available_at=now()+(($3)::text||' seconds')::interval,lease_owner=NULL,lease_until=NULL,error=$4,evidence=COALESCE($5,evidence),updated_at=now() WHERE id=$1",
-        [task.id, retry ? 'queued' : 'failed', String(Math.min(60, 2 ** (task.attempts + 1))), error.message.slice(0, 2000), error.evidence ? JSON.stringify(error.evidence) : null],
+      const settled = await client.query(
+        "UPDATE tasks SET status=$2,available_at=now()+(($3)::text||' seconds')::interval,lease_owner=NULL,lease_until=NULL,error=$4,evidence=COALESCE($5,evidence),updated_at=now() WHERE id=$1 AND status='running' AND lease_owner=$6",
+        [task.id, retry ? 'queued' : 'failed', String(Math.min(60, 2 ** (task.attempts + 1))), error.message.slice(0, 2000), error.evidence ? JSON.stringify(error.evidence) : null, config.workerId],
       );
+      if (!settled.rowCount) {
+        console.log(`worker ${config.workerId}: task ${task.id} lease was recovered; discarding stale failure`);
+        return;
+      }
       await client.query('UPDATE workers SET current_task_id=NULL,last_seen=now() WHERE id=$1', [config.workerId]);
       await audit(client, `worker:${config.workerId}`, retry ? 'task.retry_scheduled' : 'task.failed', 'task', task.id, { error: error.message });
     });
