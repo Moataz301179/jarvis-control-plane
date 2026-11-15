@@ -6,3 +6,5 @@ node_modules/
 coverage/
 # Local secrets written by `elevenlabs onboard`
 /.env.local
+
+node_modules
