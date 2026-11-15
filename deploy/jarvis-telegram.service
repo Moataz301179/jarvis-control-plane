@@ -1,0 +1,22 @@
+[Unit]
+Description=JARVIS Telegram Channel
+After=network.target postgresql@14-main.service jarvis-api.service
+Wants=postgresql@14-main.service jarvis-api.service
+
+[Service]
+Type=simple
+User=jarvis-ops
+Group=jarvis-ops
+WorkingDirectory=/srv/jarvis/current
+EnvironmentFile=/srv/jarvis/shared/.env
+ExecStart=/usr/bin/node telegram-bridge.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/jarvis
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,24 @@
+[Unit]
+Description=JARVIS Control Plane API
+After=network.target postgresql@14-main.service redis-server.service
+Wants=postgresql@14-main.service redis-server.service
+
+[Service]
+Type=simple
+User=jarvis-ops
+Group=jarvis-ops
+WorkingDirectory=/srv/jarvis/current
+EnvironmentFile=/srv/jarvis/shared/.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/jarvis
+
+[Install]
+WantedBy=multi-user.target

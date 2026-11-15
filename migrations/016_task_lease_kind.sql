@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_kind text NOT NULL DEFAULT 'worker';
+
+COMMIT;

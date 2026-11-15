@@ -1,0 +1,24 @@
+[Unit]
+Description=JARVIS Independent Verifier
+After=network.target postgresql@14-main.service redis-server.service jarvis-api.service
+Wants=postgresql@14-main.service redis-server.service jarvis-api.service
+
+[Service]
+Type=simple
+User=jarvis-ops
+Group=jarvis-ops
+WorkingDirectory=/srv/jarvis/current
+EnvironmentFile=/srv/jarvis/shared/.env
+ExecStart=/usr/bin/node verifier.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/jarvis
+
+[Install]
+WantedBy=multi-user.target
