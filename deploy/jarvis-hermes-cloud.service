@@ -13,14 +13,15 @@ Environment=JARVIS_HERMES_EXECUTION_TARGET=cloud
 Environment=HERMES_HOME=/home/jarvis-ops/.hermes
 Environment=HERMES_BINARY=/home/jarvis-ops/.local/bin/hermes
 Environment=HERMES_PROFILE=chief
-Environment=HERMES_PROVIDER=ollama-cloud
-Environment=HERMES_MODEL=deepseek-v4.1-flash
+Environment=HERMES_PROVIDER=openrouter
+Environment=HERMES_MODEL=openrouter/free
 Environment=HERMES_GATEWAY_URL=http://127.0.0.1:8644
 Environment=JARVIS_HERMES_BRIDGE_URL=http://127.0.0.1:3100
+ExecStartPre=/usr/bin/node /srv/jarvis/current/scripts/wait-for-api.js
 ExecStart=/usr/bin/node /srv/jarvis/current/hermes-bridge/bridge.js
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=30
+TimeoutStopSec=16min
 KillMode=mixed
 NoNewPrivileges=true
 PrivateTmp=true

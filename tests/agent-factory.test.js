@@ -4,16 +4,23 @@ import { validateAgentDefinition, buildAgentAcceptance } from '../lib/agent-fact
 
 const valid = {
   slug: 'market-research', name: 'Market Research', project_code: 'STUDIO',
-  model_provider: 'ollama-cloud', model: 'deepseek-v4.1-flash', hermes_profile: 'analyst',
+  model_provider: 'openrouter', model: 'openrouter/free', hermes_profile: 'analyst',
   policy_profile: 'standard', approval_policy: 'require_owner', memory_scope: ['STUDIO'],
   tool_allowlist: ['web','browser','memory','todo'], skill_allowlist: [],
 };
 
-test('agent factory defaults to the configured Ollama Cloud route and returns activation criteria', () => {
-  const result = validateAgentDefinition(valid);
+test('agent factory defaults to a free cloud route and returns activation criteria', () => {
+  const { model_provider, model, ...withoutModelRoute } = valid;
+  const result = validateAgentDefinition(withoutModelRoute);
   assert.equal(result.valid, true);
-  assert.equal(result.definition.model_provider, 'ollama-cloud');
+  assert.equal(result.definition.model_provider, 'openrouter');
+  assert.equal(result.definition.model, 'openrouter/free');
   assert.equal(buildAgentAcceptance(result.definition).length, 5);
+});
+
+test('agent factory rejects metered models', () => {
+  assert.equal(validateAgentDefinition({ ...valid, model: 'anthropic/claude-sonnet' }).valid, false);
+  assert.equal(validateAgentDefinition({ ...valid, model_provider: 'ollama-cloud' }).valid, false);
 });
 
 test('agent factory rejects unknown tools, unsupported providers and cross-project memory', () => {

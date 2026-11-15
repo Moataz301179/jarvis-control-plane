@@ -32,8 +32,9 @@ async function loadConfig() {
     token: bridgeToken,
     profile: config.HERMES_PROFILE || 'default',
     gatewayUrl: config.HERMES_GATEWAY_URL || 'http://127.0.0.1:8644',
-    provider: config.HERMES_PROVIDER || 'ollama-cloud',
-    model: config.HERMES_MODEL || 'deepseek-v4.1-flash',
+    provider: config.HERMES_PROVIDER || 'openrouter',
+    model: config.HERMES_MODEL || 'openrouter/free',
+    allowMeteredModels: config.JARVIS_ALLOW_METERED_MODELS === 'true',
     target: config.JARVIS_HERMES_EXECUTION_TARGET || (config.JARVIS_HERMES_CLOUD_BRIDGE_TOKEN ? 'cloud' : 'mac'),
   };
 }
@@ -53,10 +54,11 @@ function allowedWorkingDirectory(candidate, projectCode) {
 }
 
 async function api(endpoint, options = {}) {
+  const { timeout, ...requestOptions } = options;
   const response = await fetch(`${config.baseUrl}${endpoint}`, {
-    ...options,
+    ...requestOptions,
     headers: { authorization: `Bearer ${config.token}`, 'content-type': 'application/json', ...(options.headers || {}) },
-    signal: AbortSignal.timeout(options.timeout || 30000),
+    signal: options.signal || AbortSignal.timeout(timeout || 30000),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `JARVIS HTTP ${response.status}`);
@@ -301,6 +303,10 @@ async function executeJob(job) {
   const toolsets = Array.isArray(job.toolsets) ? job.toolsets.join(',') : 'file,web,memory,todo,clarify';
   const provider = String(job.model_provider || config.provider);
   const model = String(job.model || config.model);
+  const verifiedFreeRoute = provider === 'openrouter' && (model === 'openrouter/free' || model.endsWith(':free'));
+  if (!verifiedFreeRoute && !config.allowMeteredModels) {
+    throw new Error(`Zero-cost policy blocked Hermes route ${provider}:${model}; select an OpenRouter :free model.`);
+  }
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-hermes-'));
   const usagePath = path.join(temp, 'usage.json');
   const started = Date.now();
@@ -360,10 +366,11 @@ async function withLeaseRenewal(job, work) {
 }
 
 let stopping = false;
+const shutdownController = new AbortController();
 async function loop() {
   while (!stopping) {
     try {
-      const { job } = await api('/v1/hermes/bridge/jobs/next', { method: 'POST', body: JSON.stringify({ target: config.target }) });
+      const { job } = await api('/v1/hermes/bridge/jobs/next', { method: 'POST', body: JSON.stringify({ target: config.target }), signal: shutdownController.signal });
       if (job) {
         console.log(`Executing Hermes job ${job.id}: ${job.title}`);
         const result = await withLeaseRenewal(job, () => executeJob(job));
@@ -371,18 +378,21 @@ async function loop() {
         console.log(`Hermes job ${job.id} ${result.ok ? 'succeeded' : 'failed'}`);
       }
     } catch (error) {
+      if (stopping && error.name === 'AbortError') break;
       console.error(new Date().toISOString(), error.message);
     }
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 }
 
-process.on('SIGTERM', () => { stopping = true; });
-process.on('SIGINT', () => { stopping = true; });
+process.on('SIGTERM', () => { stopping = true; shutdownController.abort(); });
+process.on('SIGINT', () => { stopping = true; shutdownController.abort(); });
 
 await heartbeat();
-setInterval(() => heartbeat().catch((error) => console.error('heartbeat:', error.message)), 15000);
+const heartbeatTimer = setInterval(() => heartbeat().catch((error) => console.error('heartbeat:', error.message)), 15000);
+heartbeatTimer.unref?.();
 syncCapabilities().then((result) => console.log(`capability inventory synced ${JSON.stringify(result)}`)).catch((error) => console.error('capability sync:', error.message));
-setInterval(() => syncCapabilities().catch((error) => console.error('capability sync:', error.message)), 6 * 60 * 60 * 1000);
+const capabilitySyncTimer = setInterval(() => syncCapabilities().catch((error) => console.error('capability sync:', error.message)), 6 * 60 * 60 * 1000);
+capabilitySyncTimer.unref?.();
 console.log(`JARVIS Hermes bridge online as ${bridgeName}`);
 await loop();
