@@ -35,6 +35,7 @@ zero-cost policy and inference ledger cover local runs too.
 | `JARVIS_OPENJARVIS_BIN` | Absolute path to a `jarvis` executable |
 | `JARVIS_OPENJARVIS_PROJECT` | Source checkout; adapter runs `uv run --project <dir> jarvis` |
 | `JARVIS_OPENJARVIS_MODEL` | Default local model |
+| `JARVIS_OPENJARVIS_TOOLS` | Comma-separated tool names passed as `--tools` (e.g. `browser,http_request,web_search,git_tool,file_read`) |
 | `JARVIS_OPENJARVIS_TIMEOUT_MS` | Per-run timeout (default 120000) |
 
 Enable it on a host that has OpenJarvis installed:
@@ -76,6 +77,29 @@ approval policy (`risk: review`).
 | `channel` bridges (incl. Telegram) | `telegram-bridge.js` + `jarvis-telegram.service` | **Control-plane Telegram is retained unchanged** |
 | Frontend / wallpaper UI | `public/index.html`, `public/styles.css` | **Retained unchanged** (owner background + wallpaper controls) |
 | Model routing / cost | `inference.js`, zero-cost policy | OpenJarvis runs are recorded as `provider=openjarvis` |
+
+## Always-on runtime
+
+On the VPS the runtime is a systemd unit, `jarvis-openjarvis.service`
+(`jarvis serve --host 127.0.0.1 --port 3110`), enabled at boot with
+`Restart=always`. It requires the `server` extra (`uv sync --extra server`).
+Browsing uses the `browser` extra; its Chromium lives under
+`PLAYWRIGHT_BROWSERS_PATH=/srv/jarvis/shared/ms-playwright`.
+
+File tools are confined by `~/.openjarvis/config.toml`:
+
+```toml
+[security]
+allowed_dirs = ["/srv/jarvis/workspaces", "/srv/jarvis/openjarvis"]
+```
+
+## Project isolation
+
+HotelsVendors is a **separate Project**, never a part of JARVIS. JARVIS is the
+assistant that manages projects. Project repositories live in their own
+workspace (`/srv/jarvis/workspaces/HV/repos` for HotelsVendors) and are
+accessed read/manage only. JARVIS code, services and configuration never enter
+a project repository.
 
 ## Constraints
 

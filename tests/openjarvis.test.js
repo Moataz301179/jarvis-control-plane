@@ -30,8 +30,13 @@ fs.chmodSync(stub, 0o755);
 process.env.JARVIS_OPENJARVIS_ENABLED = 'true';
 process.env.JARVIS_OPENJARVIS_BIN = stub;
 process.env.JARVIS_OPENJARVIS_MODEL = 'qwen2.5-coder:7b';
+process.env.JARVIS_OPENJARVIS_TOOLS = 'browser,http_request';
 
-const { askOpenJarvis, openJarvisStatus, openJarvisEnv } = await import('../lib/openjarvis.js');
+const { askOpenJarvis, openJarvisStatus, openJarvisEnv, openJarvisSettings } = await import('../lib/openjarvis.js');
+
+test('settings expose the configured tool list', () => {
+  assert.equal(openJarvisSettings().tools, 'browser,http_request');
+});
 
 test('status reports the configured runtime as available', async () => {
   const status = await openJarvisStatus({ force: true });
