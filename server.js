@@ -21,6 +21,7 @@ import { toolCatalog, AUTO_APPROVAL_TOOLS } from './lib/tools.js';
 import { runBackupVerification, backupState, runBackupIfDue } from './lib/backup.js';
 import { queueNotification, drainNotifications, notificationState } from './lib/notifications.js';
 import { assertFreeModel, recordInferenceUsage, inferenceState } from './lib/inference.js';
+import { askOpenJarvis, openJarvisStatus } from './lib/openjarvis.js';
 import { saveGitHubCredential, githubCredentialStatus, createDeploymentAdapter, updateDeploymentAdapter, deploymentState, createDeploymentRequest, approveAndDispatchDeployment, syncDeploymentRun, syncPendingDeployments } from './lib/deployment-adapters.js';
 import { saveBusinessProvider, businessProviderStatus, runBusinessDiscovery, prepareCampaign, approveBusinessWorkProduct, launchBusinessCampaign, rollbackBusinessCampaign, prepareOutreachSequence, sendOutreachEmail, verifyEmailRoundTrip, pollOutreachReplies, recordMetricSnapshot, revenueReport, executeGrok, businessExecutionState } from './lib/business-execution.js';
 import { listAgentModelRoutes, resolveCentralModelRoute, upsertAgentModelRoute } from './lib/model-routes.js';
@@ -2119,6 +2120,7 @@ const MAC_ACTIONS = {
   cursor_agent: { risk: 'danger', description: 'Run Cursor Agent against an approved workspace' },
   codex_agent: { risk: 'review', description: 'Run Codex autonomously inside an approved project workspace' },
   claude_agent: { risk: 'review', description: 'Run Claude Code for review or implementation inside an approved project workspace' },
+  openjarvis_ask: { risk: 'review', description: 'Run a local-first OpenJarvis query on the Mac' },
   browser_profile_login: { risk: 'safe', description: 'Open the dedicated JARVIS browser profile for an owner login' },
   browser_profile_probe: { risk: 'safe', description: 'Independently verify an authenticated browser session' },
   remote_desktop_device: { risk: 'safe', description: 'Report the linked Remote Desktop Commander device' },
@@ -2854,6 +2856,25 @@ async function handle(req, res) {
   }
   if (req.method === 'POST' && url.pathname === '/v1/notifications/drain') { await requirePermission(req, 'provider:write'); return sendJson(res, 200, await drainNotifications(20)); }
   if (req.method === 'GET' && url.pathname === '/v1/inference/usage') return sendJson(res, 200, await inferenceState());
+  if (req.method === 'GET' && url.pathname === '/v1/openjarvis/status') {
+    await requirePermission(req, 'read');
+    return sendJson(res, 200, await openJarvisStatus());
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/openjarvis/ask') {
+    await requirePermission(req, 'agent:write');
+    req.body = (await readJson(req)) || {};
+    const result = await askOpenJarvis({ query: req.body.query, model: req.body.model });
+    const cost = Number(result.usage?.cost ?? result.usage?.total_cost ?? 0);
+    await recordInferenceUsage({
+      operation: 'openjarvis.ask',
+      provider: 'openjarvis',
+      model: result.model || 'default',
+      usage: result.usage,
+      freeVerified: !Number.isFinite(cost) || cost === 0,
+      metadata: { runtime: 'openjarvis' },
+    });
+    return sendJson(res, 200, result);
+  }
   if (req.method === 'GET' && url.pathname === '/v1/control-plane') return sendJson(res, 200, await centralControlState());
   if (req.method === 'POST' && url.pathname === '/v1/execution/preflight') { await requirePermission(req, 'read'); req.body = await readJson(req); return sendJson(res, 200, await executionPreflight(req.body)); }
   if (req.method === 'GET' && url.pathname === '/v1/owner-profile') return sendJson(res, 200, await ownerProfileState());

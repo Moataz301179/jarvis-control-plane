@@ -297,6 +297,28 @@ async function browserProfileProbe(params) {
   return { verified, signed_in: verified, final_url: finalUrl.href, page_title: data.title || '', expected_hosts: expectedHosts, challenge, profile_session: 'jarvis-account-verification' };
 }
 
+async function openJarvisAsk(params) {
+  const project = String(process.env.JARVIS_OPENJARVIS_PROJECT || path.join(home, 'Documents', 'ChatGPT', 'OpenJarvis')).trim();
+  const query = String(params.query || '').trim();
+  if (!query) throw new Error('query is required');
+  if (query.length > 20000) throw new Error('query must be <= 20000 characters');
+  const model = String(params.model || process.env.JARVIS_OPENJARVIS_MODEL || '').trim();
+  if (model && !/^[A-Za-z0-9._:/+-]{1,120}$/.test(model)) throw new Error('model is invalid');
+  const args = ['run', '--project', project, 'jarvis', 'ask', '--json', '--no-stream', ...(model ? ['-m', model] : []), '--', query];
+  const candidates = [process.env.JARVIS_UV_BIN, path.join(home, '.local', 'bin', 'uv'), '/opt/homebrew/bin/uv'].filter(Boolean);
+  let lastError = null;
+  for (const uv of candidates) {
+    try {
+      const { stdout } = await execFileAsync(uv, args, { timeout: 180000, maxBuffer: 8 * 1024 * 1024, env: process.env });
+      return { ...JSON.parse(String(stdout || '{}')), runtime: 'openjarvis', project, uv };
+    } catch (error) {
+      lastError = error;
+      if (error.code !== 'ENOENT') break;
+    }
+  }
+  throw new Error(`OpenJarvis could not run on the Mac bridge: ${String(lastError?.stderr || lastError?.message || 'uv not found').slice(-2000)}`);
+}
+
 async function execute(job) {
   const params = job.params || {};
   switch (job.action) {
@@ -316,6 +338,7 @@ async function execute(job) {
     case 'cursor_agent': return cursorAgent(params);
     case 'codex_agent': return codexAgent(params);
     case 'claude_agent': return claudeAgent(params);
+    case 'openjarvis_ask': return openJarvisAsk(params);
     case 'browser_profile_login': return browserProfileLogin(params);
     case 'browser_profile_probe': return browserProfileProbe(params);
     case 'remote_desktop_device': return { device_id: process.env.JARVIS_RDC_DEVICE_ID || null, hostname: os.hostname() };
