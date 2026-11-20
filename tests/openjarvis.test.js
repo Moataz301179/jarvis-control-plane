@@ -31,11 +31,14 @@ process.env.JARVIS_OPENJARVIS_ENABLED = 'true';
 process.env.JARVIS_OPENJARVIS_BIN = stub;
 process.env.JARVIS_OPENJARVIS_MODEL = 'qwen2.5-coder:7b';
 process.env.JARVIS_OPENJARVIS_TOOLS = 'browser,http_request';
+process.env.JARVIS_OPENJARVIS_AGENT = 'orchestrator';
 
 const { askOpenJarvis, openJarvisStatus, openJarvisEnv, openJarvisSettings } = await import('../lib/openjarvis.js');
 
-test('settings expose the configured tool list', () => {
-  assert.equal(openJarvisSettings().tools, 'browser,http_request');
+test('settings expose the configured tool list and agent', () => {
+  const settings = openJarvisSettings();
+  assert.equal(settings.tools, 'browser,http_request');
+  assert.equal(settings.agent, 'orchestrator');
 });
 
 test('status reports the configured runtime as available', async () => {
