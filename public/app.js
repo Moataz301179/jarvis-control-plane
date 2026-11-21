@@ -140,13 +140,13 @@ function renderProviderKeys(){
 function installChatPresence(){
   const body=document.querySelector('#chatConsole .intelligence-body');const header=body?.querySelector('.mini-chat-head');
   if(!body||!header||body.querySelector('.jarvis-chat-presence'))return;
-  const stage=document.createElement('div');stage.className='jarvis-chat-presence';stage.setAttribute('aria-hidden','true');stage.innerHTML='<img class="chat-face-base" src="assets/jarvis-hologram-face.png" alt=""><img class="chat-face-speaking" src="assets/jarvis-hologram-face-speaking.png" alt=""><i class="chat-lip-glow"></i>';
+  const stage=document.createElement('div');stage.className='jarvis-chat-presence';stage.setAttribute('aria-hidden','true');stage.innerHTML='<div class="chat-face-frame"><img class="chat-face-base" src="assets/jarvis-hologram-face.png" alt=""><span class="chat-mouth"><img class="mouth-closed" src="assets/jarvis-mouth-closed.png" alt=""><img class="mouth-open" src="assets/jarvis-mouth-open.png" alt=""></span></div>';
   header.insertAdjacentElement('afterend',stage);body.classList.add('has-chat-presence');
 }
 function installPresenceLipSync(){
   const presence=document.getElementById('presenceAnimation');if(!presence||presence.querySelector('.jarvis-face-stack'))return;
   const stack=document.createElement('div');stack.className='jarvis-face-stack';stack.setAttribute('aria-hidden','true');
-  stack.innerHTML='<img class="presence-face-base" src="assets/jarvis-hologram-face.png" alt=""><img class="presence-face-speaking" src="assets/jarvis-hologram-face-speaking.png" alt=""><i class="presence-lip-glow"></i>';
+  stack.innerHTML='<div class="face-frame"><img class="presence-face-base" src="assets/jarvis-hologram-face.png" alt=""><span class="presence-mouth"><img class="mouth-closed" src="assets/jarvis-mouth-closed.png" alt=""><img class="mouth-open" src="assets/jarvis-mouth-open.png" alt=""></span></div>';
   presence.append(stack);
 }
 function installCollapsibleWidgets(){
@@ -428,10 +428,10 @@ async function playJarvisAudio(blob,finish){
     const context=new AudioContextClass();
     try{
       const decoded=await context.decodeAudioData((await blob.arrayBuffer()).slice(0));
-      const source=context.createBufferSource();source.buffer=decoded;source.connect(context.destination);
+      const source=context.createBufferSource();source.buffer=decoded;const analyser=context.createAnalyser();analyser.fftSize=1024;source.connect(analyser);analyser.connect(context.destination);state.voiceAnalyser=analyser;
       state.voiceAudioContext=context;state.voiceAudioSource=source;
-      source.onended=()=>{finish();context.close().catch(()=>{});if(state.voiceAudioContext===context)state.voiceAudioContext=null;if(state.voiceAudioSource===source)state.voiceAudioSource=null;};
-      document.body.classList.add('jarvis-speaking');renderSoundState();await context.resume();source.start(0);return;
+      source.onended=()=>{stopMouthAnimation();finish();context.close().catch(()=>{});if(state.voiceAudioContext===context)state.voiceAudioContext=null;if(state.voiceAudioSource===source)state.voiceAudioSource=null;};
+      document.body.classList.add('jarvis-speaking');startAnalyserMouth(analyser);renderSoundState();await context.resume();source.start(0);return;
     }catch(error){
       console.warn('[JARVIS voice] Web Audio decode failed',{mediaType,bytes:blob.size,error:error?.message||String(error)});
       context.close().catch(()=>{});
@@ -440,8 +440,8 @@ async function playJarvisAudio(blob,finish){
   }
   state.voiceAudioUrl=URL.createObjectURL(blob);
   const audio=new Audio();audio.preload='auto';audio.src=state.voiceAudioUrl;audio.hidden=true;document.body.appendChild(audio);state.voiceAudio=audio;
-  audio.onplay=()=>{document.body.classList.add('jarvis-speaking');renderSoundState();};
-  audio.onended=audio.onerror=()=>{finish();audio.remove();if(state.voiceAudioUrl){URL.revokeObjectURL(state.voiceAudioUrl);state.voiceAudioUrl=null;}};
+  audio.onplay=()=>{document.body.classList.add('jarvis-speaking');startLocalMouth();renderSoundState();};
+  audio.onended=audio.onerror=()=>{stopMouthAnimation();finish();audio.remove();if(state.voiceAudioUrl){URL.revokeObjectURL(state.voiceAudioUrl);state.voiceAudioUrl=null;}};
   await new Promise((resolve,reject)=>{
     const timer=setTimeout(()=>reject(new Error('Audio loading timed out')),8000);
     audio.addEventListener('canplay',()=>{clearTimeout(timer);resolve();},{once:true});
@@ -459,11 +459,16 @@ function speakWithLocalVoice(text,finish,onFailure){
   const language=(navigator.language||'en').split('-')[0];
   utterance.voice=voices.find(voice=>voice.lang?.toLowerCase().startsWith(`${language}-`)&&/Daniel|Alex|Google UK English Male|Microsoft (Guy|Ryan|George)/i.test(voice.name))||voices.find(voice=>voice.lang?.toLowerCase().startsWith(language))||null;
   utterance.rate=.94;utterance.pitch=.84;utterance.volume=1;
-  utterance.onstart=()=>{console.info('[JARVIS local voice] started',utterance.voice?.name||'default system voice');document.body.classList.add('jarvis-speaking');renderSoundState();};
-  utterance.onend=()=>{console.info('[JARVIS local voice] finished');finish();};
-  utterance.onerror=(event)=>{console.warn('[JARVIS local voice] error',event.error);if(['interrupted','canceled'].includes(event.error)){finish();return;}onFailure?.(new Error(event.error||'local playback failed'));};
+  utterance.onstart=()=>{console.info('[JARVIS local voice] started',utterance.voice?.name||'default system voice');document.body.classList.add('jarvis-speaking');startLocalMouth();renderSoundState();};
+  utterance.onend=()=>{console.info('[JARVIS local voice] finished');stopMouthAnimation();finish();};
+  utterance.onerror=(event)=>{console.warn('[JARVIS local voice] error',event.error);stopMouthAnimation();if(['interrupted','canceled'].includes(event.error)){finish();return;}onFailure?.(new Error(event.error||'local playback failed'));};
   synth.speak(utterance);
 }
+let mouthLoopCancel=null;let mouthLocalTimer=null;
+function setMouthLevel(value){document.body.style.setProperty('--mouth',String(Math.max(0,Math.min(1,Number(value)||0)).toFixed(3)));}
+function stopMouthAnimation(){if(mouthLoopCancel){try{mouthLoopCancel();}catch{}}mouthLoopCancel=null;if(mouthLocalTimer){clearInterval(mouthLocalTimer);mouthLocalTimer=null;}setMouthLevel(0);}
+function startAnalyserMouth(analyser){stopMouthAnimation();const data=new Uint8Array(analyser.fftSize);let smoothed=0;let frame=0;const tick=()=>{analyser.getByteTimeDomainData(data);let sum=0;for(const sample of data){const x=(sample-128)/128;sum+=x*x;}const rms=Math.sqrt(sum/data.length);const target=Math.min(1,rms*6);smoothed=smoothed*.6+target*.4;setMouthLevel(smoothed);frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);mouthLoopCancel=()=>cancelAnimationFrame(frame);}
+function startLocalMouth(){stopMouthAnimation();let phase=0;mouthLocalTimer=setInterval(()=>{phase+=.55;setMouthLevel(Math.min(.92,.22+Math.abs(Math.sin(phase))*.55+Math.random()*.12));},70);}
 async function speak(text){
   if(state.muted||state.voiceSession||!text)return;
   if(localStorage.getItem('jarvis_speak_replies')==='0')return;
@@ -471,7 +476,7 @@ async function speak(text){
   if(resumeWake)stopWakeWord(false);
   let finished=false;
   const finish=()=>{
-    if(finished)return;finished=true;document.body.classList.remove('jarvis-speaking');renderSoundState();
+    if(finished)return;finished=true;stopMouthAnimation();document.body.classList.remove('jarvis-speaking');renderSoundState();
     if((resumeWake||state.rearmAfterVoice||state.autoWake)&&!state.voiceSession)setTimeout(()=>{if(!state.voiceSession&&!state.wakeArmed)armWakeWord();state.rearmAfterVoice=false;},900);
   };
   const paidVoiceEnabled=state.settings?.settings?.voice?.enabled===true&&state.elevenStatus?.ready;
