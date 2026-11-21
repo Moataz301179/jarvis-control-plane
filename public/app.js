@@ -150,8 +150,9 @@ function installPresenceLipSync(){
   presence.append(stack);
 }
 function installCollapsibleWidgets(){
-  let collapsed={};try{collapsed=JSON.parse(localStorage.getItem('jarvis_collapsed_widgets')||'{}')||{};}catch{}
-  const persist=()=>localStorage.setItem('jarvis_collapsed_widgets',JSON.stringify(collapsed));
+  let collapsed={};try{collapsed=JSON.parse(localStorage.getItem('jarvis_collapsed_widgets_v2')||'{}')||{};}catch{}
+  const persist=()=>localStorage.setItem('jarvis_collapsed_widgets_v2',JSON.stringify(collapsed));
+  const DEFAULT_COLLAPSED=new Set(['24/7 health monitoring','Provider usage','Infrastructure state','Call the owner over the internet','Outbound owner calls','Private JARVIS channel','API key and gateway','ElevenLabs session limits','ElevenLabs secure setup','Open JARVIS on your phone','Venture Studio GitHub projects','Authorized targets and tools','Employee execution and shared memory','Create specialists from the connected Hermes inventory','Connected Accounts','Repository-scoped automation credential']);
   const keyFor=element=>{
     if(element.dataset.widgetKey)return element.dataset.widgetKey;
     const view=element.closest('.view')?.id||element.closest('aside')?.id||'workspace';
@@ -159,7 +160,7 @@ function installCollapsibleWidgets(){
     element.dataset.widgetKey=`${view}:${title}`.toLowerCase().replace(/[^a-z0-9:_-]+/g,'-').replace(/-+/g,'-').slice(0,100);
     return element.dataset.widgetKey;
   };
-  const apply=element=>{const key=keyFor(element),button=element.querySelector(':scope > .panel-head > .widget-toggle, :scope > .widget-toggle'),isCollapsed=Boolean(collapsed[key]);element.classList.toggle('widget-collapsed',isCollapsed);element.dataset.widgetCollapsed=String(isCollapsed);if(button){button.setAttribute('aria-expanded',String(!isCollapsed));button.setAttribute('aria-label',isCollapsed?'Expand widget':'Collapse widget');const label=isCollapsed?'+':'−';if(button.textContent!==label)button.textContent=label;}};
+  const apply=element=>{const key=keyFor(element),button=element.querySelector(':scope > .panel-head > .widget-toggle, :scope > .widget-toggle'),title=(element.querySelector(':scope > .panel-head h3')?.textContent||'').trim(),hasSaved=Object.prototype.hasOwnProperty.call(collapsed,key),isCollapsed=hasSaved?Boolean(collapsed[key]):DEFAULT_COLLAPSED.has(title);element.classList.toggle('widget-collapsed',isCollapsed);element.dataset.widgetCollapsed=String(isCollapsed);if(button){button.setAttribute('aria-expanded',String(!isCollapsed));button.setAttribute('aria-label',isCollapsed?'Expand widget':'Collapse widget');const label=isCollapsed?'+':'−';if(button.textContent!==label)button.textContent=label;}};
   const enhance=()=>{
     document.querySelectorAll('article.panel, .resource-card').forEach(element=>{
       const head=element.querySelector(':scope > .panel-head');
@@ -174,7 +175,7 @@ function installCollapsibleWidgets(){
     if(!toggle&&!head)return;
     if(!toggle&&event.target.closest('button,a,input,select,textarea'))return;
     const element=(toggle||head).closest('article.panel, .resource-card');if(!element)return;
-    event.preventDefault();const key=keyFor(element);collapsed[key]=!Boolean(collapsed[key]);persist();apply(element);
+    event.preventDefault();const key=keyFor(element);collapsed[key]=!element.classList.contains('widget-collapsed');persist();apply(element);
   });
   new MutationObserver(enhance).observe(document.body,{childList:true,subtree:true});
   enhance();
@@ -239,9 +240,21 @@ function installNavigationIA(){
 
   const metrics=$('#overviewMetrics');const room=$('#commandRoom');if(metrics&&room&&room.parentElement===metrics.parentElement)room.parentElement.insertBefore(metrics,room);
 
+  groupSettingsSections();
   $('#refreshMemory')?.addEventListener('click',()=>loadData());
   $('#refreshSecurity')?.addEventListener('click',()=>{loadSecurityScope();loadProviderKeys();});
   loadSecurityScope();
+}
+function groupSettingsSections(){
+  const view=$('#view-settings');if(!view)return;
+  const panels=[...view.querySelectorAll('article.panel')];
+  const titleOf=(panel)=>(panel.querySelector('h3')?.textContent||'').trim();
+  view.querySelectorAll('.settings-group').forEach((node)=>node.remove());
+  const groups=[['VOICE',['ElevenLabs session limits','ElevenLabs secure setup']],['PHONE',['Call the owner from the Mac','Call the owner over the internet','Outbound owner calls']],['CHANNELS',['Private JARVIS channel','Open JARVIS on your phone']],['PROVIDERS',['API key and gateway']],['SYSTEM',['Provider usage','24/7 health monitoring','Infrastructure state']]];
+  const ordered=[];const used=new Set();
+  for(const [label,titles] of groups){const matched=[];for(const title of titles){for(const panel of panels){if(!used.has(panel)&&titleOf(panel)===title){matched.push(panel);used.add(panel);}}}if(matched.length){ordered.push({label});matched.forEach((panel)=>ordered.push({panel}));}}
+  for(const panel of panels){if(!used.has(panel))ordered.push({panel});}
+  for(const item of ordered){if(item.label){const heading=document.createElement('h2');heading.className='settings-group';heading.textContent=item.label;view.appendChild(heading);}else{view.appendChild(item.panel);}}
 }
 async function loadSecurityScope(){
   const node=$('#securityScope');if(!node)return;
