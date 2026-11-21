@@ -552,7 +552,9 @@ function renderStatus() {
   $('#voiceBalance').textContent = state.status.providers.elevenlabs.configured ? (voiceSpendEnabled && state.status.providers.elevenlabs.ready ? 'READY' : 'SPEND OFF') : 'NOT SET';
   const updateRail=(selector,text,ready)=>{const node=$(selector);if(!node)return;node.textContent=text;node.className=`pill ${ready?'':'off'}`;};
   updateRail('#statusWorker',workers?`${workers} ONLINE`:'OFFLINE',workers>0);
-  updateRail('#statusVoice',voiceSpendEnabled?(state.status.providers.elevenlabs.ready?'ELEVENLABS':'CHECK FAILED'):'LOCAL',voiceSpendEnabled?state.status.providers.elevenlabs.ready:true);
+  const voiceEngine=String(state.settings?.settings?.voice?.provider||'browser').toUpperCase();
+  const voiceReady=voiceEngine==='ELEVENLABS'?Boolean(state.status.providers.elevenlabs.ready):true;
+  updateRail('#statusVoice',voiceReady?voiceEngine:'CHECK FAILED',voiceReady);
   updateRail('#statusTelegram',state.status.providers.telegram.ready?'CONNECTED':state.status.providers.telegram.configured?'CHECK FAILED':'NOT SET',state.status.providers.telegram.ready);
   updateRail('#statusMac',state.data?.macBridge?.status==='online'?'ONLINE':String(state.data?.macBridge?.status||'OFFLINE').toUpperCase(),state.data?.macBridge?.status==='online');
 }
