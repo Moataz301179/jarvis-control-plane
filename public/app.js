@@ -319,6 +319,24 @@ function toggleHandsFree(){
     toast('Hands-free on. Say “JARVIS”.');
   } else { stopWakeWord(); toast('Hands-free off'); }
 }
+
+function updateSpeakToggle(){const b=$('#speakToggle');if(!b)return;const on=localStorage.getItem('jarvis_speak_replies')!=='0';b.textContent=on?'🔊':'🔇';b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));b.title=on?'Spoken replies ON':'Spoken replies OFF — tap to enable';}
+function installSpeakToggle(){
+  const actions=document.querySelector('#chatConsole .mini-chat-actions');if(!actions||$('#speakToggle'))return;
+  const button=document.createElement('button');button.id='speakToggle';button.className='mini-icon';button.type='button';button.setAttribute('aria-label','Toggle spoken replies');
+  button.addEventListener('click',()=>{const on=localStorage.getItem('jarvis_speak_replies')!=='0';localStorage.setItem('jarvis_speak_replies',on?'0':'1');updateSpeakToggle();if(!on){ensureAudioContext();speak('Voice on, Boss.');}else{stopMouthAnimation();}});
+  actions.insertBefore(button,actions.firstChild);updateSpeakToggle();
+}
+let greetingScheduled=false;
+function scheduleGreeting(){
+  if(greetingScheduled||sessionStorage.getItem('jarvis_greeted')==='1')return;
+  if(localStorage.getItem('jarvis_speak_replies')==='0')return;
+  greetingScheduled=true;
+  const greet=()=>{if(sessionStorage.getItem('jarvis_greeted')==='1')return;sessionStorage.setItem('jarvis_greeted','1');ensureAudioContext();setTimeout(()=>speak('Yes Boss. JARVIS online. How can I help?'),250);};
+  ensureAudioContext();
+  if(sharedAudioContext&&sharedAudioContext.state==='running'){setTimeout(greet,700);}
+  else document.addEventListener('pointerdown',()=>{ensureAudioContext();setTimeout(greet,450);},{once:true});
+}
 function installHandsFreeControl(){
   const actions=document.querySelector('#chatConsole .mini-chat-actions');if(!actions||$('#handsFreeToggle'))return;
   const button=document.createElement('button');button.id='handsFreeToggle';button.className='mini-icon';button.type='button';button.textContent='⌁';button.title='Hands-free conversation';button.setAttribute('aria-label','Toggle hands-free conversation');
@@ -849,7 +867,7 @@ async function startElevenVoice(initialRequest=''){
   }catch(e){await stopLiveVoice();if(/daily limit|agent.*limit|reached/i.test(e.message)){toast('Live voice quota reached — switching to voice turn fallback');startVoiceTurn();}else toast(`Voice: ${e.message}`);}
 }
 
-installAudioControls();installClaudeControls();installHermesControls();installAgentFactory();installRepositoryRegistry();installGithubControls();installProviderKeyControls();installTwilioControls();installFaceTimeControls();installCharacterControls();installPasswordControls();installControlSurfaces();installPresenceLipSync();installChatPresence();installChatSessions();installHandsFreeControl();installNavigationIA();installCollapsibleWidgets();
+installAudioControls();installClaudeControls();installHermesControls();installAgentFactory();installRepositoryRegistry();installGithubControls();installProviderKeyControls();installTwilioControls();installFaceTimeControls();installCharacterControls();installPasswordControls();installControlSurfaces();installPresenceLipSync();installChatPresence();installChatSessions();installSpeakToggle();installHandsFreeControl();installNavigationIA();installCollapsibleWidgets();
 $('#loginForm').addEventListener('submit',async(e)=>{e.preventDefault();try{const response=await fetch('/v1/session',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({password:$('#token').value,remember:$('#rememberDevice')?.checked!==false})});const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.error||`Login failed (${response.status})`);$('#token').value='';await bootstrap();}catch(err){$('#loginError').textContent=err.message;}});
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>setView(b.dataset.view));for(const b of document.querySelectorAll('[data-jump]'))b.addEventListener('click',()=>setView(b.dataset.jump));$('#homeButton').addEventListener('click',()=>setView('overview'));$('#logout').addEventListener('click',async()=>{await api('/v1/session',{method:'DELETE'});showLogin();});
 $('#refreshAgents').addEventListener('click',loadData);$('#refreshProjects').addEventListener('click',loadData);$('#refreshMac').addEventListener('click',loadData);$('#refreshModels').addEventListener('click',()=>loadModels(true));$('#applyModel').addEventListener('click',async()=>{const[provider,...rest]=$('#modelSelect').value.split('::');try{await api('/v1/models/select',{method:'POST',body:JSON.stringify({provider,model:rest.join('::')})});toast('Model applied');await Promise.all([loadModels(),loadStatus()]);}catch(e){toast(e.message)}});
@@ -942,7 +960,7 @@ document.addEventListener('click',async(e)=>{
   if(verify){verify.disabled=true;verify.textContent='VERIFYING…';try{await api(`/v1/account-connections/${encodeURIComponent(verify.dataset.accountVerify)}/confirm`,{method:'POST',body:'{}'});toast('Independent browser verification queued');await loadData();}catch(err){toast(err.message);verify.disabled=false;verify.textContent='VERIFY LOGIN';}}
 });
 function updateClock(){const now=new Date();$('#clock').textContent=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Africa/Cairo'}).format(now);$('#dateDisplay').textContent=new Intl.DateTimeFormat('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric',timeZone:'Africa/Cairo'}).format(now);}
-async function bootstrap(){try{await Promise.all([loadData(),loadModels(),loadChat()]);showApp();if(localStorage.getItem('jarvis_speak_replies')===null)localStorage.setItem('jarvis_speak_replies','1');const locked=localStorage.getItem('jarvis_wallpaper_locked')==='1';document.body.classList.toggle('wallpaper-locked',locked);applyWallpaperMotion(localStorage.getItem('jarvis_wallpaper_motion')||'off');renderHologramState();}catch(e){showLogin();}}
+async function bootstrap(){try{await Promise.all([loadData(),loadModels(),loadChat()]);showApp();scheduleGreeting();if(localStorage.getItem('jarvis_speak_replies')===null)localStorage.setItem('jarvis_speak_replies','1');const locked=localStorage.getItem('jarvis_wallpaper_locked')==='1';document.body.classList.toggle('wallpaper-locked',locked);applyWallpaperMotion(localStorage.getItem('jarvis_wallpaper_motion')||'off');renderHologramState();}catch(e){showLogin();}}
 updateClock();setInterval(updateClock,1000);setInterval(()=>{if(!$('#shell').hidden)loadData().catch(()=>{})},15000);bootstrap();
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')maybeAutoArmWake();});
 setInterval(()=>{if(!$('#shell').hidden)loadClaudeState().catch(()=>{});},15000);
