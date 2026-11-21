@@ -3195,7 +3195,7 @@ async function handle(req, res) {
   }
   if (req.method === 'GET' && url.pathname.startsWith('/v1/')) await requirePermission(req, 'read');
   if (req.method === 'GET' && url.pathname === '/v1/characters') { await requirePermission(req, 'read'); return sendJson(res, 200, await listCharacters()); }
-  if (req.method === 'POST' && url.pathname === '/v1/characters') { await requirePermission(req, 'provider:write'); req.body = (await readJson(req)) || {}; return sendJson(res, 201, await saveCharacter(req.body)); }
+  if (req.method === 'POST' && url.pathname === '/v1/characters') { await requirePermission(req, 'provider:write'); req.body = (await readJson(req, 8 * 1024 * 1024)) || {}; return sendJson(res, 201, await saveCharacter(req.body)); }
   const characterImageMatch = url.pathname.match(/^\/v1\/characters\/([0-9a-f-]{36})\/image$/);
   if (req.method === 'GET' && characterImageMatch) {
     await requirePermission(req, 'read');
