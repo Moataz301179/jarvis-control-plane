@@ -2221,6 +2221,7 @@ const MAC_ACTIONS = {
 function macJobRisk(action, params) {
   const definition = MAC_ACTIONS[action];
   if (!definition) throw Object.assign(new Error('Mac action is not allowlisted'), { statusCode: 400 });
+  if (action === 'delete_old_files' && params?.dry_run === true) return 'review';
   const target = String(params?.path || params?.source || '');
   const dangerPaths = [/^\/$/, /^\/System/, /^\/Library/, /\.ssh/, /Keychains/, /\.env$/, /\/\.git\//];
   return dangerPaths.some((pattern) => pattern.test(target)) ? 'danger' : definition.risk;
