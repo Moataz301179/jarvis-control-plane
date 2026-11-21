@@ -243,7 +243,7 @@ async function loadCharacters(){
     state.characters=data.characters||[];
     const active=data.active||'builtin';
     const found=active==='builtin'?null:state.characters.find((item)=>item.id===active);
-    state.character=found?{kind:'photo',id:found.id,name:found.name,mouth:found.mouth}:{kind:'builtin'};
+    state.character=found?{kind:'photo',id:found.id,name:found.name,mouth:found.mouth,voice:found.voice||'female'}:{kind:'builtin',voice:'female'};
     applyCharacterMarkup();renderCharacters();
   }catch(error){const node=$('#characterMessage');if(node)node.textContent=error.message;}
 }
@@ -251,10 +251,10 @@ function renderCharacters(){
   const grid=$('#characterGrid');if(!grid)return;
   const active=state.character?.kind==='photo'?state.character.id:'builtin';
   const count=$('#characterCount');if(count)count.textContent=`${state.characters.length+1} FACES`;
-  const builtin=`<article class="character-card ${active==='builtin'?'active':''}"><div class="character-thumb builtin-thumb">J</div><div><strong>JARVIS Woman</strong><small>Vector · full lip-sync</small></div><div class="button-row"><button class="holo-button" data-character-select="builtin">${active==='builtin'?'ACTIVE':'SELECT'}</button></div></article>`;
+  const builtin=`<article class="character-card ${active==='builtin'?'active':''}"><div class="character-thumb builtin-thumb">J</div><div><strong>JARVIS Woman</strong><small>Vector · female voice · full lip-sync</small></div><div class="button-row"><button class="holo-button" data-character-select="builtin">${active==='builtin'?'ACTIVE':'SELECT'}</button></div></article>`;
   const photos=state.characters.map((character)=>{
     const mouth=character.mouth||{x:50,y:62,w:18,h:9};
-    return `<article class="character-card ${active===character.id?'active':''}"><img class="character-thumb" src="/v1/characters/${encodeURIComponent(character.id)}/image" alt=""><div style="min-width:0"><strong>${esc(character.name)}</strong><small>Photo · adjustable mouth</small><div class="mouth-controls" data-mouth-id="${esc(character.id)}"><input type="range" min="0" max="100" value="${Number(mouth.x)||50}" data-axis="x" title="Mouth X %"><input type="range" min="0" max="100" value="${Number(mouth.y)||62}" data-axis="y" title="Mouth Y %"><input type="range" min="2" max="60" value="${Number(mouth.w)||18}" data-axis="w" title="Mouth width %"><input type="range" min="1" max="40" value="${Number(mouth.h)||9}" data-axis="h" title="Mouth height %"></div></div><div class="button-row"><button class="holo-button" data-character-select="${esc(character.id)}">${active===character.id?'ACTIVE':'SELECT'}</button><button class="holo-button" data-character-delete="${esc(character.id)}">REMOVE</button></div></article>`;
+    return `<article class="character-card ${active===character.id?'active':''}"><img class="character-thumb" src="/v1/characters/${encodeURIComponent(character.id)}/image" alt=""><div style="min-width:0"><strong>${esc(character.name)}</strong><small>Photo · ${character.voice==='male'?'male':'female'} voice · adjustable mouth</small><div class="mouth-controls" data-mouth-id="${esc(character.id)}"><input type="range" min="0" max="100" value="${Number(mouth.x)||50}" data-axis="x" title="Mouth X %"><input type="range" min="0" max="100" value="${Number(mouth.y)||62}" data-axis="y" title="Mouth Y %"><input type="range" min="2" max="60" value="${Number(mouth.w)||18}" data-axis="w" title="Mouth width %"><input type="range" min="1" max="40" value="${Number(mouth.h)||9}" data-axis="h" title="Mouth height %"></div><select class="character-voice" data-voice-id="${esc(character.id)}"><option value="female" ${character.voice==='female'?'selected':''}>FEMALE VOICE</option><option value="male" ${character.voice==='male'?'selected':''}>MALE VOICE</option></select></div><div class="button-row"><button class="holo-button" data-character-select="${esc(character.id)}">${active===character.id?'ACTIVE':'SELECT'}</button><button class="holo-button" data-character-delete="${esc(character.id)}">REMOVE</button></div></article>`;
   }).join('');
   grid.innerHTML=builtin+photos;
 }
@@ -280,6 +280,8 @@ function installCharacterControls(){
     }catch(error){$('#characterMessage').textContent=error.message;}
   });
   $('#characterGrid').addEventListener('change',async(e)=>{
+    const voiceSelect=e.target.closest('.character-voice');
+    if(voiceSelect){const id=voiceSelect.dataset.voiceId;try{const updated=await api('/v1/characters/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({voice:voiceSelect.value})});if(state.character?.kind==='photo'&&state.character.id===id)state.character.voice=updated.voice;toast('Voice set to '+voiceSelect.value);await loadCharacters();}catch(error){$('#characterMessage').textContent=error.message;}return;}
     const input=e.target.closest('.mouth-controls input');if(!input)return;
     const group=input.closest('.mouth-controls');const id=group?.dataset.mouthId;if(!id)return;
     const mouth={};group.querySelectorAll('input').forEach((slider)=>{mouth[slider.dataset.axis]=Number(slider.value);});
@@ -604,7 +606,9 @@ function speakWithLocalVoice(text,finish,onFailure){
   const utterance=new SpeechSynthesisUtterance(String(text).replace(/[`*#_>]/g,'').replace(/\s+/g,' ').trim().slice(0,2000));
   const voices=synth.getVoices();
   const language=(navigator.language||'en').split('-')[0];
-  utterance.voice=voices.find(voice=>voice.lang?.toLowerCase().startsWith(`${language}-`)&&/Daniel|Alex|Google UK English Male|Microsoft (Guy|Ryan|George)/i.test(voice.name))||voices.find(voice=>voice.lang?.toLowerCase().startsWith(language))||null;
+  const gender=state.character?.voice||'female';
+  const voicePattern=gender==='male'?/Daniel|Alex|Google UK English Male|Microsoft (Guy|Ryan|George)|Male/i:/Samantha|Karen|Moira|Tessa|Victoria|Google UK English Female|Microsoft (Zira|Aria|Jenny|Sonia|Libby)|Female/i;
+  utterance.voice=voices.find(voice=>voice.lang?.toLowerCase().startsWith(`${language}-`)&&voicePattern.test(voice.name))||voices.find(voice=>voice.lang?.toLowerCase().startsWith(language))||null;
   utterance.rate=.94;utterance.pitch=.84;utterance.volume=1;
   utterance.onstart=()=>{console.info('[JARVIS local voice] started',utterance.voice?.name||'default system voice');document.body.classList.add('jarvis-speaking');startLocalMouth();renderSoundState();};
   utterance.onend=()=>{console.info('[JARVIS local voice] finished');stopMouthAnimation();finish();};

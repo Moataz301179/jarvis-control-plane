@@ -1037,12 +1037,13 @@ async function synthesizeJarvisVoice(text) {
   return { buffer: Buffer.from(await speech.arrayBuffer()), voiceId, modelId };
 }
 
-async function synthesizePiperVoice(text) {
+async function synthesizePiperVoice(text, gender = 'female') {
+  const model = gender === 'male' ? '/srv/jarvis/shared/piper/en_GB-alan-medium.onnx' : '/srv/jarvis/shared/piper/en_US-lessac-medium.onnx';
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-piper-'));
   const output = path.join(directory, 'speech.wav');
   try {
     await new Promise((resolve, reject) => {
-      const child = spawn('/opt/piper/piper', ['--model', '/srv/jarvis/shared/piper/en_GB-alan-medium.onnx', '--output_file', output], { stdio: ['pipe', 'ignore', 'pipe'] });
+      const child = spawn('/opt/piper/piper', ['--model', model, '--output_file', output], { stdio: ['pipe', 'ignore', 'pipe'] });
       let stderr = '';
       const timer = setTimeout(() => { child.kill('SIGKILL'); reject(Object.assign(new Error('Piper synthesis timed out'), { statusCode: 504 })); }, 30000);
       child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
@@ -1054,18 +1055,19 @@ async function synthesizePiperVoice(text) {
       });
       child.stdin.end(String(text).slice(0, 2000));
     });
-    return { buffer: await fs.readFile(output), mime: 'audio/wav', engine: 'piper-en_GB-alan-medium', voiceId: 'en_GB-alan-medium', modelId: 'piper' };
+    return { buffer: await fs.readFile(output), mime: 'audio/wav', engine: `piper-${gender}`, voiceId: gender === 'male' ? 'en_GB-alan-medium' : 'en_US-lessac-medium', modelId: 'piper' };
   } finally {
     await fs.rm(directory, { recursive: true, force: true }).catch(() => null);
   }
 }
 
-async function synthesizeEdgeVoice(text) {
+async function synthesizeEdgeVoice(text, gender = 'female') {
+  const voice = gender === 'male' ? 'en-GB-RyanNeural' : 'en-GB-SoniaNeural';
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'jarvis-edge-'));
   const output = path.join(directory, 'speech.mp3');
   try {
-    await execFileAsync('/usr/local/bin/edge-tts', ['--voice', 'en-GB-RyanNeural', '--text', String(text).slice(0, 2000), '--write-media', output], { timeout: 60000, maxBuffer: 4 * 1024 * 1024 });
-    return { buffer: await fs.readFile(output), mime: 'audio/mpeg', engine: 'edge-en-GB-RyanNeural', voiceId: 'en-GB-RyanNeural', modelId: 'edge-tts' };
+    await execFileAsync('/usr/local/bin/edge-tts', ['--voice', voice, '--text', String(text).slice(0, 2000), '--write-media', output], { timeout: 60000, maxBuffer: 4 * 1024 * 1024 });
+    return { buffer: await fs.readFile(output), mime: 'audio/mpeg', engine: `edge-${gender}`, voiceId: voice, modelId: 'edge-tts' };
   } catch (error) {
     throw Object.assign(new Error(`Edge TTS failed: ${String(error.stderr || error.message || 'unknown').slice(-300)}`), { statusCode: 502 });
   } finally {
@@ -1180,7 +1182,7 @@ async function createVoiceSession() {
 const CHARACTER_ROOT = '/srv/jarvis/shared/characters';
 
 async function listCharacters() {
-  const rows = await query('SELECT id,name,mouth,created_at FROM hologram_characters ORDER BY created_at');
+  const rows = await query('SELECT id,name,mouth,voice,created_at FROM hologram_characters ORDER BY created_at');
   const activeRow = (await query("SELECT value FROM runtime_settings WHERE key='hologram.character'")).rows[0];
   const active = activeRow?.value || 'builtin';
   return { characters: rows.rows, active };
@@ -1196,8 +1198,9 @@ async function saveCharacter(body) {
   const buffer = Buffer.from(match[3], 'base64');
   if (!buffer.length || buffer.length > 4 * 1024 * 1024) throw Object.assign(new Error('Image must be between 1 byte and 4 MB'), { statusCode: 400 });
   const mouth = body.mouth && typeof body.mouth === 'object' ? body.mouth : { x: 50, y: 62, w: 18, h: 9 };
+  const voice = body.voice === 'male' ? 'male' : 'female';
   await fs.mkdir(CHARACTER_ROOT, { recursive: true });
-  const inserted = await query('INSERT INTO hologram_characters (name,mime,mouth) VALUES ($1,$2,$3) RETURNING id,name,mouth,created_at', [name, mime, JSON.stringify(mouth)]);
+  const inserted = await query('INSERT INTO hologram_characters (name,mime,mouth,voice) VALUES ($1,$2,$3,$4) RETURNING id,name,mouth,voice,created_at', [name, mime, JSON.stringify(mouth), voice]);
   const id = inserted.rows[0].id;
   const filePath = path.join(CHARACTER_ROOT, `${id}.${ext}`);
   await fs.writeFile(filePath, buffer);
@@ -1214,12 +1217,23 @@ async function selectCharacter(id) {
   return listCharacters();
 }
 
-async function updateCharacterMouth(id, mouth) {
+async function updateCharacter(id, patch = {}) {
+  const existing = (await query('SELECT mouth,voice FROM hologram_characters WHERE id=$1', [id])).rows[0];
+  if (!existing) throw Object.assign(new Error('Character not found'), { statusCode: 404 });
   const clamp = (value, fallback) => Math.max(0, Math.min(100, Number(value ?? fallback)));
-  const value = { x: clamp(mouth?.x, 50), y: clamp(mouth?.y, 62), w: clamp(mouth?.w, 18), h: clamp(mouth?.h, 9) };
-  const result = await query('UPDATE hologram_characters SET mouth=$2 WHERE id=$1 RETURNING id,name,mouth,created_at', [id, JSON.stringify(value)]);
-  if (!result.rows.length) throw Object.assign(new Error('Character not found'), { statusCode: 404 });
+  const source = patch.mouth || existing.mouth || {};
+  const mouth = { x: clamp(source.x, 50), y: clamp(source.y, 62), w: clamp(source.w, 18), h: clamp(source.h, 9) };
+  const voice = patch.voice === 'male' ? 'male' : patch.voice === 'female' ? 'female' : (existing.voice || 'female');
+  const result = await query('UPDATE hologram_characters SET mouth=$2,voice=$3 WHERE id=$1 RETURNING id,name,mouth,voice,created_at', [id, JSON.stringify(mouth), voice]);
   return result.rows[0];
+}
+
+async function activeVoiceGender() {
+  const activeRow = (await query("SELECT value FROM runtime_settings WHERE key='hologram.character'")).rows[0];
+  const active = activeRow?.value || 'builtin';
+  if (active === 'builtin') return 'female';
+  const row = (await query('SELECT voice FROM hologram_characters WHERE id=$1', [active])).rows[0];
+  return row?.voice === 'male' ? 'male' : 'female';
 }
 
 async function deleteCharacter(id) {
@@ -3208,7 +3222,7 @@ async function handle(req, res) {
   const characterSelectMatch = url.pathname.match(/^\/v1\/characters\/([0-9a-f-]{36}|builtin)\/select$/);
   if (req.method === 'POST' && characterSelectMatch) { await requirePermission(req, 'provider:write'); return sendJson(res, 200, await selectCharacter(characterSelectMatch[1])); }
   const characterMatch = url.pathname.match(/^\/v1\/characters\/([0-9a-f-]{36})$/);
-  if (req.method === 'PATCH' && characterMatch) { await requirePermission(req, 'provider:write'); req.body = (await readJson(req)) || {}; return sendJson(res, 200, await updateCharacterMouth(characterMatch[1], req.body.mouth)); }
+  if (req.method === 'PATCH' && characterMatch) { await requirePermission(req, 'provider:write'); req.body = (await readJson(req)) || {}; return sendJson(res, 200, await updateCharacter(characterMatch[1], req.body)); }
   if (req.method === 'DELETE' && characterMatch) { await requirePermission(req, 'provider:write'); return sendJson(res, 200, await deleteCharacter(characterMatch[1])); }
   if (req.method === 'GET' && url.pathname === '/v1/settings') return sendJson(res, 200, await settingsState());
   if (req.method === 'PATCH' && url.pathname === '/v1/settings') { await requirePermission(req, 'provider:write'); req.body = await readJson(req); return sendJson(res, 200, await updateRuntimeSettings(req.body)); }
@@ -3384,13 +3398,14 @@ async function handle(req, res) {
     if (!text || text.length > 2000) throw Object.assign(new Error('Voice text is required and must be <= 2000 characters'), { statusCode: 400 });
     const providerRow = await query("SELECT value FROM runtime_settings WHERE key='voice.provider'");
     const provider = ['piper', 'edge', 'elevenlabs'].includes(providerRow.rows[0]?.value) ? providerRow.rows[0].value : 'browser';
+    const gender = await activeVoiceGender();
     let speech;
-    if (provider === 'piper') speech = await synthesizePiperVoice(text);
-    else if (provider === 'edge') speech = await synthesizeEdgeVoice(text);
+    if (provider === 'piper') speech = await synthesizePiperVoice(text, gender);
+    else if (provider === 'edge') speech = await synthesizeEdgeVoice(text, gender);
     else if (provider === 'elevenlabs') speech = await synthesizeJarvisVoice(text);
     else throw Object.assign(new Error('The selected voice engine runs in the browser. Choose Piper or Edge for server voice.'), { statusCode: 409 });
     await query('INSERT INTO audit_events (actor,action,entity_type,entity_id,detail) VALUES ($1,$2,$3,$4,$5)', ['owner', 'voice.tts_generated', 'voice_engine', speech.voiceId || null, { characters: text.length, provider, model: speech.modelId || null, source: 'chat_reply' }]).catch(() => {});
-    res.writeHead(200, { 'content-type': speech.mime || 'audio/mpeg', 'content-length': speech.buffer.length, 'cache-control': 'no-store', 'x-jarvis-voice-id': speech.voiceId || '', 'x-jarvis-voice-model': speech.modelId || provider, 'x-jarvis-voice-engine': provider });
+    res.writeHead(200, { 'content-type': speech.mime || 'audio/mpeg', 'content-length': speech.buffer.length, 'cache-control': 'no-store', 'x-jarvis-voice-id': speech.voiceId || '', 'x-jarvis-voice-model': speech.modelId || provider, 'x-jarvis-voice-engine': provider, 'x-jarvis-voice-gender': gender });
     return res.end(speech.buffer);
   }
   if (req.method === 'POST' && url.pathname === '/v1/voice/transcribe') {
