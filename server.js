@@ -3068,7 +3068,8 @@ async function handle(req, res) {
     const consumed = ticket ? await query('UPDATE login_tickets SET used_at=now() WHERE token_hash=$1 AND expires_at>now() AND used_at IS NULL RETURNING id', [hashToken(ticket)]) : { rows: [] };
     if (!consumed.rows.length) throw Object.assign(new Error('login ticket is invalid or expired'), { statusCode: 401 });
     const remember = url.searchParams.get('remember') === '1';
-    res.writeHead(302, { location: '/', 'set-cookie': sessionCookie(req, issueSession(), remember ? 60 * 60 * 24 * 30 : 43200), 'cache-control': 'no-store' });
+    const sessionTtl = remember ? 30 * 24 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000;
+    res.writeHead(302, { location: '/', 'set-cookie': sessionCookie(req, issueSession(sessionTtl), Math.floor(sessionTtl / 1000)), 'cache-control': 'no-store' });
     return res.end();
   }
   if (req.method === 'GET' && url.pathname === '/local-login') {
