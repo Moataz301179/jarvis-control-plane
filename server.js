@@ -44,7 +44,7 @@ import { saveBusinessProfile, loadBusinessProfile, missingProfileSections, INTER
 import { createCheckpoint, resumeCheckpoint, listCheckpoints } from './lib/checkpoint.js';
 import { recordProfitEntry, profitSummary } from './lib/profit-ledger.js';
 import { HERMES_TEAM, routeHermesTask, teamMember, hermesTeamState } from './lib/hermes-team.js';
-import { placeAgentRingCall, agentRingConfigured, agentRingCalls } from './lib/agent-ring.js';
+import { placeAgentRingCall, agentRingConfigured, agentRingCalls, twilioStatus, normalizePhone } from './lib/agent-ring.js';
 import { escalateToOwner } from './lib/escalation.js';
 import { resolveTask } from './lib/resolver.js';
 import { createMissionPlan, runtimeMandates } from './lib/mission-orchestrator.js';
@@ -919,6 +919,23 @@ async function saveNousCredentials(body) {
   if (!apiKey) throw Object.assign(new Error('Nous API key is required'), { statusCode: 400 });
   await query("INSERT INTO provider_credentials (provider,encrypted_key,agent_id,metadata,updated_at) VALUES ('nous',$1,NULL,$2,now()) ON CONFLICT (provider) DO UPDATE SET encrypted_key=EXCLUDED.encrypted_key,metadata=EXCLUDED.metadata,updated_at=now()", [encryptSecret(apiKey), JSON.stringify({ base_url: baseUrl, configured_by: 'owner' })]);
   return nousStatus();
+}
+
+async function saveTwilioCredentials(body) {
+  const sid = String(body.account_sid || '').trim();
+  const token = String(body.auth_token || '').trim();
+  if (!/^AC[0-9a-fA-F]{32}$/.test(sid)) throw Object.assign(new Error('Twilio Account SID must look like AC followed by 32 hex characters'), { statusCode: 400 });
+  if (token.length < 20 || /\s/.test(token)) throw Object.assign(new Error('Twilio auth token is invalid'), { statusCode: 400 });
+  const fromNumber = normalizePhone(body.from_number);
+  const defaultNumber = body.default_to ? normalizePhone(body.default_to) : '';
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}.json`, {
+    headers: { authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}` },
+    signal: AbortSignal.timeout(12000),
+  });
+  const detail = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(`Twilio rejected the credentials (HTTP ${response.status}): ${detail.message || 'no details returned'}`), { statusCode: 502 });
+  await query("INSERT INTO provider_credentials (provider,encrypted_key,agent_id,metadata,updated_at) VALUES ('twilio',$1,NULL,$2,now()) ON CONFLICT (provider) DO UPDATE SET encrypted_key=EXCLUDED.encrypted_key,metadata=EXCLUDED.metadata,updated_at=now()", [encryptSecret(token), JSON.stringify({ account_sid: sid, from_number: fromNumber, default_to: defaultNumber || null, configured_by: 'owner' })]);
+  return twilioStatus();
 }
 
 async function saveTelegramCredentials(body) {
@@ -3176,6 +3193,9 @@ async function handle(req, res) {
   if (req.method === 'GET' && url.pathname === '/v1/providers/nous/status') return sendJson(res, 200, await nousStatus());
   if (req.method === 'POST' && url.pathname === '/v1/providers/nous') { await requirePermission(req, 'provider:write'); req.body = await readJson(req); return sendJson(res, 200, await saveNousCredentials(req.body)); }
   if (req.method === 'GET' && url.pathname === '/v1/providers/balances') return sendJson(res, 200, await providerBalances());
+  if (req.method === 'GET' && url.pathname === '/v1/providers/twilio/status') return sendJson(res, 200, await twilioStatus());
+  if (req.method === 'POST' && url.pathname === '/v1/providers/twilio') { await requirePermission(req, 'provider:write'); req.body = await readJson(req); return sendJson(res, 200, await saveTwilioCredentials(req.body)); }
+  if (req.method === 'POST' && url.pathname === '/v1/providers/twilio/test-call') { await requirePermission(req, 'provider:write'); req.body = (await readJson(req)) || {}; return sendJson(res, 200, await placeAgentRingCall({ message: String(req.body.message || 'This is JARVIS testing the phone line.'), to_phone: req.body.to_phone || null })); }
   if (req.method === 'GET' && url.pathname === '/v1/providers/telegram/status') return sendJson(res, 200, await telegramStatus());
   if (req.method === 'GET' && url.pathname === '/v1/providers/github/status') { await requirePermission(req, 'deployment:read'); return sendJson(res, 200, await githubCredentialStatus()); }
   if (req.method === 'POST' && url.pathname === '/v1/providers/github') { await requirePermission(req, 'provider:write'); req.body = await readJson(req); return sendJson(res, 200, await saveGitHubCredential(req.body, req.principal.id)); }
