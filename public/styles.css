@@ -761,3 +761,25 @@ body.jarvis-speaking .jarvis-chat-presence .jarvis-face-svg{filter:drop-shadow(0
 .jarvis-chat-presence .photo-face{position:absolute;left:50%;top:50%;width:min(88%,390px);aspect-ratio:1;transform:translate(-50%,-50%)}
 .login-remember{display:flex;align-items:center;gap:8px;margin-top:10px;color:#9e87ad;font-family:"DM Mono",monospace;font-size:8px;letter-spacing:.06em;text-transform:uppercase}
 .login-remember input{width:auto;min-height:0;accent-color:#b55dff}
+
+/* Photo lip-sync: dark glossy mouth visible on bright portraits */
+.photo-mouth-open{
+  mix-blend-mode:normal;
+  background:
+    radial-gradient(ellipse at 50% 34%, rgba(255,248,252,.9) 0 10%, rgba(255,220,235,.35) 14%, transparent 22%),
+    radial-gradient(ellipse at 50% 56%, #2a0512 0 34%, #7a0f31 54%, #c93b70 70%, rgba(18,2,9,0) 86%);
+  border:1px solid rgba(255,170,205,.65);
+  box-shadow:0 0 14px rgba(255,90,150,.55), inset 0 2px 7px rgba(255,230,242,.32), inset 0 -5px 10px rgba(8,0,5,.9);
+  opacity:calc(.75 + var(--mouth,0)*.25);
+  transform:scaleY(calc(.26 + var(--mouth,0)*.74)) scaleX(calc(.92 + var(--mouth,0)*.08));
+}
+.photo-mouth::after{
+  content:'';
+  position:absolute;
+  left:6%;right:6%;top:58%;height:52%;
+  border-radius:50%;
+  background:radial-gradient(ellipse, rgba(0,0,0,.42), transparent 72%);
+  opacity:calc(var(--mouth,0)*.55);
+  transform:scaleY(var(--mouth,0));
+  pointer-events:none;
+}
