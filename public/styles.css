@@ -675,3 +675,21 @@ body.jarvis-listening .presence-lip-glow, body.jarvis-listening .chat-lip-glow {
 .view > .metric-grid,.view > .grid-2{margin-bottom:14px}
 @media (max-width:980px){.nav-group-label{display:none}}
 @media (max-width:650px){.side-nav{overflow-x:auto}.nav-button{flex:0 0 auto;min-width:52px}}
+
+/* Product-intelligence audit fixes */
+@media (min-width: 1280px){
+  .shell:not(.chat-open), .shell.intelligence-open:not(.chat-open){grid-template-columns:208px minmax(0,1fr) 54px 264px}
+  .shell.chat-open, .shell.intelligence-open.chat-open{grid-template-columns:208px minmax(0,1fr) 340px 264px}
+  .sidebar{padding:18px 12px 14px;overflow-y:auto}
+  .sidebar-brand{justify-content:flex-start;padding:0 0 18px}
+  .sidebar-brand > div{display:block}
+  .sidebar-clock{display:grid}
+  .side-model{display:block}
+  .sidebar-status{display:grid}
+  .nav-button{justify-content:flex-start;padding:9px 11px}
+  .nav-button span, .nav-button b{display:inline-flex}
+  .nav-group-label{display:block}
+}
+#chatSessions{flex:0 0 auto;max-height:190px;overflow:auto}
+#view-security .form-actions .holo-button.primary{flex:0 0 auto;min-width:150px}
+.memory-results{max-height:520px;overflow:auto;margin-top:12px}
