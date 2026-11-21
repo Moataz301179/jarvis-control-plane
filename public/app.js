@@ -308,7 +308,7 @@ function updateHandsFreeButton(){const b=$('#handsFreeToggle');if(!b)return;b.se
 function toggleHandsFree(){
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   state.autoWake=!state.autoWake;
-  localStorage.setItem('jarvis_hands_free',state.autoWake?'1':'0');
+  localStorage.setItem('jarvis_hands_free_v2',state.autoWake?'1':'0');
   updateHandsFreeButton();
   setChatWorkspace(true);
   ensureAudioContext();
@@ -320,17 +320,17 @@ function toggleHandsFree(){
   } else { stopWakeWord(); toast('Hands-free off'); }
 }
 
-function updateSpeakToggle(){const b=$('#speakToggle');if(!b)return;const on=localStorage.getItem('jarvis_speak_replies')!=='0';b.textContent=on?'🔊':'🔇';b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));b.title=on?'Spoken replies ON':'Spoken replies OFF — tap to enable';}
+function updateSpeakToggle(){const b=$('#speakToggle');if(!b)return;const on=localStorage.getItem('jarvis_speak_replies_v2')!=='0';b.textContent=on?'🔊':'🔇';b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));b.title=on?'Spoken replies ON':'Spoken replies OFF — tap to enable';}
 function installSpeakToggle(){
   const actions=document.querySelector('#chatConsole .mini-chat-actions');if(!actions||$('#speakToggle'))return;
   const button=document.createElement('button');button.id='speakToggle';button.className='mini-icon';button.type='button';button.setAttribute('aria-label','Toggle spoken replies');
-  button.addEventListener('click',()=>{const on=localStorage.getItem('jarvis_speak_replies')!=='0';localStorage.setItem('jarvis_speak_replies',on?'0':'1');updateSpeakToggle();if(!on){ensureAudioContext();speak('Voice on, Boss.');}else{stopMouthAnimation();}});
+  button.addEventListener('click',()=>{const on=localStorage.getItem('jarvis_speak_replies_v2')!=='0';localStorage.setItem('jarvis_speak_replies_v2',on?'0':'1');updateSpeakToggle();if(!on){ensureAudioContext();speak('Voice on, Boss.');}else{stopMouthAnimation();}});
   actions.insertBefore(button,actions.firstChild);updateSpeakToggle();
 }
 let greetingScheduled=false;
 function scheduleGreeting(){
   if(greetingScheduled||sessionStorage.getItem('jarvis_greeted')==='1')return;
-  if(localStorage.getItem('jarvis_speak_replies')==='0')return;
+  if(localStorage.getItem('jarvis_speak_replies_v2')==='0')return;
   greetingScheduled=true;
   const greet=()=>{if(sessionStorage.getItem('jarvis_greeted')==='1')return;sessionStorage.setItem('jarvis_greeted','1');ensureAudioContext();setTimeout(()=>speak('Yes Boss. JARVIS online. How can I help?'),250);};
   ensureAudioContext();
@@ -342,9 +342,9 @@ function installHandsFreeControl(){
   const button=document.createElement('button');button.id='handsFreeToggle';button.className='mini-icon';button.type='button';button.textContent='⌁';button.title='Hands-free conversation';button.setAttribute('aria-label','Toggle hands-free conversation');
   actions.insertBefore(button,actions.firstChild);
   button.addEventListener('click',toggleHandsFree);
-  state.autoWake=localStorage.getItem('jarvis_hands_free')==='1';
+  state.autoWake=localStorage.getItem('jarvis_hands_free_v2')!=='0'&&Boolean(window.SpeechRecognition||window.webkitSpeechRecognition);
   updateHandsFreeButton();
-  document.addEventListener('pointerdown',()=>{if(state.autoWake&&!state.wakeArmed&&!state.wakeStarting)armWakeWord(true);},{once:true});
+  document.addEventListener('pointerdown',()=>{if(state.autoWake&&!state.wakeArmed&&!state.wakeStarting&&localStorage.getItem('jarvis_speak_replies_v2')==='0')armWakeWord(true);},{once:true});
 }
 function installPresenceLipSync(){
   const presence=document.getElementById('presenceAnimation');if(!presence||presence.querySelector('.jarvis-face-stack'))return;
@@ -549,8 +549,8 @@ function renderUsage(){
   const s=state.settings, voice=s.settings.voice, sessions=s.usage.voice_sessions_today, el=s.providers.elevenlabs;
   const voiceUsage=state.elevenStatus?.ready?{used:Number(state.elevenStatus.characters_used),limit:Number(state.elevenStatus.characters_limit)}:{used:Number(el.charactersUsed??0),limit:Number(el.characterLimit??0)};const voiceLeft=Number.isFinite(voiceUsage.limit)&&voiceUsage.limit>0?Math.max(0,voiceUsage.limit-(Number.isFinite(voiceUsage.used)?voiceUsage.used:0)).toLocaleString():'—';$('#usageStrip').innerHTML=[`VOICE INPUT <b class="ready">LOCAL WHISPER</b>`,`VOICE OUTPUT <b class="ready">LOCAL SYSTEM</b>`,`ELEVENLABS <b class="${voice.enabled&&el.ready?'ready':'off'}">${voice.enabled&&el.ready?`${voiceLeft} chars left`:'SPEND OFF'}</b>`,`OLLAMA CLOUD <b class="${state.ollamaStatus?.ready?'ready':'off'}">${state.ollamaStatus?.ready?'READY':'NOT READY'}</b>`,`TELEGRAM <b class="${state.telegramStatus?.ready?'ready':'off'}">${state.telegramStatus?.ready?'CONNECTED':'NOT READY'}</b>`,`MAC <b class="${s.macBridge.status==='online'?'ready':'off'}">${s.macBridge.status}</b>`].map(x=>`<span>${x}</span>`).join('');
   $('#voiceMaxSeconds').value=voice.session_max_seconds;$('#voiceDailyLimit').value=voice.daily_session_limit;
-  if(localStorage.getItem('jarvis_local_voice_migrated')!=='1'){localStorage.setItem('jarvis_speak_replies','1');localStorage.setItem('jarvis_local_voice_migrated','1');}
-  const speakToggle=document.getElementById('speakReplies');if(localStorage.getItem('jarvis_speak_replies')===null)localStorage.setItem('jarvis_speak_replies','1');if(speakToggle){speakToggle.checked=localStorage.getItem('jarvis_speak_replies')!=='0';const speakLabel=speakToggle.closest('label');if(speakLabel){[...speakLabel.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE).forEach(node=>{if(node.textContent.trim())node.textContent=' SPEAK CHAT REPLIES · USES THE SELECTED ENGINE';});speakLabel.title='Uses the browser/system voice. No ElevenLabs characters are used.';}}
+  if(localStorage.getItem('jarvis_local_voice_migrated')!=='1'){localStorage.setItem('jarvis_speak_replies_v2','1');localStorage.setItem('jarvis_local_voice_migrated','1');}
+  const speakToggle=document.getElementById('speakReplies');if(localStorage.getItem('jarvis_speak_replies_v2')===null)localStorage.setItem('jarvis_speak_replies_v2','1');if(speakToggle){speakToggle.checked=localStorage.getItem('jarvis_speak_replies_v2')!=='0';const speakLabel=speakToggle.closest('label');if(speakLabel){[...speakLabel.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE).forEach(node=>{if(node.textContent.trim())node.textContent=' SPEAK CHAT REPLIES · USES THE SELECTED ENGINE';});speakLabel.title='Uses the browser/system voice. No ElevenLabs characters are used.';}}
   const voiceToggle=document.getElementById('voiceEnabled');if(voiceToggle)voiceToggle.checked=Boolean(s.settings.voice.enabled);const voiceProvider=document.getElementById('voiceProvider');if(voiceProvider)voiceProvider.value=s.settings.voice.provider||'browser';
   $('#settingsUsage').innerHTML=[['ElevenLabs',voice.enabled?(el.ready?'READY':'OFFLINE'):'SPEND OFF',voice.enabled?(el.ready?`${el.charactersUsed??'—'} / ${el.characterLimit??'—'} characters`:'Not authenticated'):'Paid speech generation is disabled',voice.enabled&&el.ready],['OpenRouter',s.providers.openrouter.ready?'READY':'OFFLINE','Free-model routing',s.providers.openrouter.ready],['Ollama',s.providers.ollama.ready?'READY':'OFFLINE','Private local inference',s.providers.ollama.ready]].map(([name,status,detail,ready])=>`<div class="system-row"><div><strong>${esc(name)}</strong><small>${esc(detail)}</small></div><span class="pill ${ready?'':'off'}">${esc(status)}</span></div>`).join('');
   $('#runtimeSettings').innerHTML=`<div class="system-row"><div><strong>Worker runtime</strong><small>${s.workers.filter(w=>w.online).length} of ${s.workers.length} authenticated</small></div><span class="pill ${s.workers.some(w=>w.online)?'':'off'}">${s.workers.some(w=>w.online)?'ONLINE':'OFFLINE'}</span></div><div class="system-row"><div><strong>Mac bridge</strong><small>${esc(s.macBridge.hostname||'No host')}</small></div><span class="pill ${s.macBridge.status==='online'?'':'off'}">${esc(s.macBridge.status)}</span></div><div class="system-row"><div><strong>Voice allowance today</strong><small>${sessions} / ${voice.daily_session_limit} sessions</small></div><span class="pill">${voice.session_max_seconds}s MAX</span></div><div class="button-row"><button id="auditCapabilities" class="holo-button" type="button">RUN LIVE CAPABILITY AUDIT</button></div><div id="capabilityAuditList" class="stack"></div>`;
@@ -691,7 +691,7 @@ function startAnalyserMouth(analyser){stopMouthAnimation();const data=new Uint8A
 function startLocalMouth(){stopMouthAnimation();let phase=0;mouthLocalTimer=setInterval(()=>{phase+=.55;setMouthLevel(Math.min(.92,.22+Math.abs(Math.sin(phase))*.55+Math.random()*.12));},70);}
 async function speak(text){
   if(state.muted||state.voiceSession||!text)return;
-  if(localStorage.getItem('jarvis_speak_replies')==='0')return;
+  if(localStorage.getItem('jarvis_speak_replies_v2')==='0')return;
   const resumeWake=state.wakeArmed;
   if(resumeWake)stopWakeWord(false);
   let finished=false;
@@ -872,7 +872,7 @@ $('#loginForm').addEventListener('submit',async(e)=>{e.preventDefault();try{cons
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>setView(b.dataset.view));for(const b of document.querySelectorAll('[data-jump]'))b.addEventListener('click',()=>setView(b.dataset.jump));$('#homeButton').addEventListener('click',()=>setView('overview'));$('#logout').addEventListener('click',async()=>{await api('/v1/session',{method:'DELETE'});showLogin();});
 $('#refreshAgents').addEventListener('click',loadData);$('#refreshProjects').addEventListener('click',loadData);$('#refreshMac').addEventListener('click',loadData);$('#refreshModels').addEventListener('click',()=>loadModels(true));$('#applyModel').addEventListener('click',async()=>{const[provider,...rest]=$('#modelSelect').value.split('::');try{await api('/v1/models/select',{method:'POST',body:JSON.stringify({provider,model:rest.join('::')})});toast('Model applied');await Promise.all([loadModels(),loadStatus()]);}catch(e){toast(e.message)}});
 $('#refreshSettings').addEventListener('click',loadData);
-document.getElementById('speakReplies')?.addEventListener('change',(e)=>{localStorage.setItem('jarvis_speak_replies',e.target.checked?'1':'0');toast(e.target.checked?'JARVIS will speak replies':'Spoken replies disabled');});
+document.getElementById('speakReplies')?.addEventListener('change',(e)=>{localStorage.setItem('jarvis_speak_replies_v2',e.target.checked?'1':'0');toast(e.target.checked?'JARVIS will speak replies':'Spoken replies disabled');});
 
 const motionModes=['off','drift','breathe','scan'];
 function applyWallpaperMotion(mode){
@@ -960,7 +960,7 @@ document.addEventListener('click',async(e)=>{
   if(verify){verify.disabled=true;verify.textContent='VERIFYING…';try{await api(`/v1/account-connections/${encodeURIComponent(verify.dataset.accountVerify)}/confirm`,{method:'POST',body:'{}'});toast('Independent browser verification queued');await loadData();}catch(err){toast(err.message);verify.disabled=false;verify.textContent='VERIFY LOGIN';}}
 });
 function updateClock(){const now=new Date();$('#clock').textContent=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Africa/Cairo'}).format(now);$('#dateDisplay').textContent=new Intl.DateTimeFormat('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric',timeZone:'Africa/Cairo'}).format(now);}
-async function bootstrap(){try{await Promise.all([loadData(),loadModels(),loadChat()]);showApp();scheduleGreeting();if(localStorage.getItem('jarvis_speak_replies')===null)localStorage.setItem('jarvis_speak_replies','1');const locked=localStorage.getItem('jarvis_wallpaper_locked')==='1';document.body.classList.toggle('wallpaper-locked',locked);applyWallpaperMotion(localStorage.getItem('jarvis_wallpaper_motion')||'off');renderHologramState();}catch(e){showLogin();}}
+async function bootstrap(){try{await Promise.all([loadData(),loadModels(),loadChat()]);showApp();scheduleGreeting();if(localStorage.getItem('jarvis_speak_replies_v2')===null)localStorage.setItem('jarvis_speak_replies_v2','1');const locked=localStorage.getItem('jarvis_wallpaper_locked')==='1';document.body.classList.toggle('wallpaper-locked',locked);applyWallpaperMotion(localStorage.getItem('jarvis_wallpaper_motion')||'off');renderHologramState();}catch(e){showLogin();}}
 updateClock();setInterval(updateClock,1000);setInterval(()=>{if(!$('#shell').hidden)loadData().catch(()=>{})},15000);bootstrap();
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')maybeAutoArmWake();});
 setInterval(()=>{if(!$('#shell').hidden)loadClaudeState().catch(()=>{});},15000);
