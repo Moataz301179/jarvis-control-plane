@@ -201,7 +201,7 @@ function renderTwilio(){
 function installFaceTimeControls(){
   const settings=$('#view-settings');const runtime=$('#runtimeSettings')?.closest('article');if(!settings||!runtime||$('#faceTimeForm'))return;
   const panel=document.createElement('article');panel.className='panel';
-  panel.innerHTML=`<div class="panel-head"><div><span class="micro">FACETIME CALLS · FREE</span><h3>Call the owner from the Mac</h3></div><span id="faceTimeStatus" class="status">NOT CONFIGURED</span></div><p class="muted">Runs on the Mac. VIDEO uses FaceTime; AUDIO and CELLULAR use the Phone app via iPhone continuity (enable Calls on Other Devices, same Wi-Fi). Free; the Mac must be awake.</p><form id="faceTimeForm" class="form-grid"><label class="wide">TARGET · APPLE ID EMAIL OR +PHONE<input id="faceTimeTarget" placeholder="+201234567890 or you@icloud.com"></label><label>KIND<select id="faceTimeKind"><option value="video">VIDEO</option><option value="audio">FACETIME AUDIO · PHONE APP</option><option value="cellular">CELLULAR · IPHONE</option></select></label><div class="form-actions"><button class="holo-button primary" type="submit">SAVE DEFAULT</button><button id="faceTimeCall" class="holo-button" type="button">CALL NOW</button></div></form><p id="faceTimeMessage" class="status-message"></p>`;
+  panel.innerHTML=`<div class="panel-head"><div><span class="micro">FACETIME CALLS · FREE</span><h3>Call the owner from the Mac</h3></div><span id="faceTimeStatus" class="status">NOT CONFIGURED</span></div><p class="muted">Runs on the Mac. VIDEO uses FaceTime; AUDIO and CELLULAR use the Phone app via iPhone continuity (enable Calls on Other Devices, same Wi-Fi). Free; the Mac must be awake.</p><form id="faceTimeForm" class="form-grid"><label class="wide">TARGET · APPLE ID EMAIL OR +PHONE<input id="faceTimeTarget" placeholder="+201234567890 or you@icloud.com"></label><label>KIND<select id="faceTimeKind"><option value="video">VIDEO</option><option value="audio">AUDIO · PHONE APP</option><option value="cellular">CELLULAR</option></select></label><div class="form-actions"><button class="holo-button primary" type="submit">SAVE DEFAULT</button><button id="faceTimeCall" class="holo-button" type="button">CALL NOW</button></div></form><p id="faceTimeMessage" class="status-message"></p>`;
   settings.insertBefore(panel,runtime);
   $('#faceTimeForm').addEventListener('submit',async(e)=>{e.preventDefault();try{state.faceTimeStatus=await api('/v1/providers/facetime',{method:'POST',body:JSON.stringify({target:$('#faceTimeTarget').value.trim(),kind:$('#faceTimeKind').value})});renderFaceTime();toast('FaceTime target saved');}catch(err){$('#faceTimeMessage').textContent=err.message;}});
   $('#faceTimeCall').addEventListener('click',async()=>{try{const result=await api('/v1/providers/facetime/call',{method:'POST',body:JSON.stringify({target:$('#faceTimeTarget').value.trim()||null,kind:$('#faceTimeKind').value})});$('#faceTimeMessage').textContent=result?.status==='succeeded'?`Calling ${result.target_masked} · ${(result.handler||result.kind)}`:`Not placed · ${result?.error||result?.status||'unknown'}`;toast(result?.status==='succeeded'?'FaceTime call started':'Call failed');}catch(err){$('#faceTimeMessage').textContent=err.message;}});
@@ -241,6 +241,7 @@ function installNavigationIA(){
   const metrics=$('#overviewMetrics');const room=$('#commandRoom');if(metrics&&room&&room.parentElement===metrics.parentElement)room.parentElement.insertBefore(metrics,room);
 
   groupSettingsSections();
+  applyQuietPanels();
   $('#refreshMemory')?.addEventListener('click',()=>loadData());
   $('#refreshSecurity')?.addEventListener('click',()=>{loadSecurityScope();loadProviderKeys();});
   loadSecurityScope();
@@ -255,6 +256,21 @@ function groupSettingsSections(){
   for(const [label,titles] of groups){const matched=[];for(const title of titles){for(const panel of panels){if(!used.has(panel)&&titleOf(panel)===title){matched.push(panel);used.add(panel);}}}if(matched.length){ordered.push({label});matched.forEach((panel)=>ordered.push({panel}));}}
   for(const panel of panels){if(!used.has(panel))ordered.push({panel});}
   for(const item of ordered){if(item.label){const heading=document.createElement('h2');heading.className='settings-group';heading.textContent=item.label;view.appendChild(heading);}else{view.appendChild(item.panel);}}
+}
+function applyQuietPanels(){
+  const exact=['24/7 health monitoring','Infrastructure state','Provider usage','Call the owner over the internet','ElevenLabs secure setup','Open JARVIS on your phone'];
+  const specs=[
+    ['settings',(panel)=>exact.includes((panel.querySelector('h3')?.textContent||'').trim())],
+    ['settings',(panel)=>/NOUS PORTAL/i.test(panel.querySelector('.micro')?.textContent||'')],
+    ['projects',(panel)=>/Venture Studio GitHub projects/i.test(panel.querySelector('h3')?.textContent||'')],
+    ['security',(panel)=>/Authorized targets and tools/i.test(panel.querySelector('h3')?.textContent||'')],
+  ];
+  for(const [viewId,match] of specs){
+    const view=$('#view-'+viewId);if(!view)continue;
+    view.querySelectorAll('article.panel').forEach((panel)=>{if(match(panel))panel.classList.add('quiet-hidden');});
+    const head=view.querySelector('.section-head');
+    if(head&&!head.querySelector('.quiet-toggle')){const button=document.createElement('button');button.type='button';button.className='quiet-toggle holo-button';button.textContent='⋯ DETAILS';button.addEventListener('click',()=>view.classList.toggle('show-quiet'));head.appendChild(button);}
+  }
 }
 async function loadSecurityScope(){
   const node=$('#securityScope');if(!node)return;
@@ -348,9 +364,8 @@ function renderUsage(){
   $('#nousBaseUrl').value=state.nousStatus?.base_url||'https://inference-api.nousresearch.com/v1';
   $('#nousMessage').textContent=state.nousStatus?.ready?`Connected · ${state.nousStatus.models||0} Nous models available`:state.nousStatus?.configured?'Key saved but connection failed':'Paste a Nous Portal API key to enable Nous routing.';
   const ring=state.agentRingStatus||{};const ringCalls=Array.isArray(ring.calls)?ring.calls.length:0;
-  $('#agentRingStatus').textContent=ring.configured?(ring.mode==='twilio'?'TWILIO LIVE':'BRIDGE LIVE'):'NOT CONFIGURED';
   $('#agentRingStatus').className=`status ${ring.configured?'completed':'failed'}`;
-  $('#agentRingStatus').textContent=ring.configured?`${ring.mode==='twilio'?'Twilio':'Bridge'} · ${ringCalls} calls logged`:'Add Twilio in the Phone calls panel, or set AGENT_RING_URL on the VPS.';
+  $('#agentRingStatus').textContent=ring.configured?`${ring.mode==='twilio'?'TWILIO':'BRIDGE'} · ${ringCalls} CALLS`:'NOT CONFIGURED';
 }
 
 function agentTile(agent) { const active = agent.runs.find((run)=>['running','queued','paused','blocked'].includes(run.status)); return `<article class="agent-tile" data-agent="${esc(agent.id)}"><div class="card-kicker"><span>${esc(agent.agent_type)}</span>${statusBadge(agent.status)}</div><strong>${esc(agent.name)}</strong><small>Manager: ${esc(agent.manager)} · Provider: ${esc(agent.provider || 'internal')}</small><p>${active ? esc(active.objective) : esc(agent.capabilities.join(' · '))}</p><div class="progress-line"><i style="width:${active?.progress || 0}%"></i></div></article>`; }
@@ -717,7 +732,7 @@ document.addEventListener('click',async(e)=>{
   if(verify){verify.disabled=true;verify.textContent='VERIFYING…';try{await api(`/v1/account-connections/${encodeURIComponent(verify.dataset.accountVerify)}/confirm`,{method:'POST',body:'{}'});toast('Independent browser verification queued');await loadData();}catch(err){toast(err.message);verify.disabled=false;verify.textContent='VERIFY LOGIN';}}
 });
 function updateClock(){const now=new Date();$('#clock').textContent=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Africa/Cairo'}).format(now);$('#dateDisplay').textContent=new Intl.DateTimeFormat('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric',timeZone:'Africa/Cairo'}).format(now);}
-async function bootstrap(){try{await Promise.all([loadData(),loadModels(),loadChat()]);showApp();if(localStorage.getItem('jarvis_speak_replies')===null)localStorage.setItem('jarvis_speak_replies','1');const locked=localStorage.getItem('jarvis_wallpaper_locked')==='1';document.body.classList.toggle('wallpaper-locked',locked);applyWallpaperMotion(localStorage.getItem('jarvis_wallpaper_motion')||'off');renderHologramState();if(window.matchMedia('(min-width: 1100px)').matches)setChatWorkspace(true);}catch(e){showLogin();}}
+async function bootstrap(){try{await Promise.all([loadData(),loadModels(),loadChat()]);showApp();if(localStorage.getItem('jarvis_speak_replies')===null)localStorage.setItem('jarvis_speak_replies','1');const locked=localStorage.getItem('jarvis_wallpaper_locked')==='1';document.body.classList.toggle('wallpaper-locked',locked);applyWallpaperMotion(localStorage.getItem('jarvis_wallpaper_motion')||'off');renderHologramState();}catch(e){showLogin();}}
 updateClock();setInterval(updateClock,1000);setInterval(()=>{if(!$('#shell').hidden)loadData().catch(()=>{})},15000);bootstrap();
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')maybeAutoArmWake();});
 setInterval(()=>{if(!$('#shell').hidden)loadClaudeState().catch(()=>{});},15000);

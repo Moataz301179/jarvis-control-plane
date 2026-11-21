@@ -697,3 +697,16 @@ body.jarvis-listening .presence-lip-glow, body.jarvis-listening .chat-lip-glow {
 /* Quiet cards: grouped settings sections */
 .settings-group{margin:22px 0 10px;color:#8e789f;font-family:"DM Mono",monospace;font-size:8px;letter-spacing:.16em;text-transform:uppercase}
 .view > .settings-group:first-of-type{margin-top:8px}
+#view-settings .form-actions .holo-button.primary{flex:0 0 auto;min-width:150px}
+
+/* Quiet mode: hide noise cards and unblock the background */
+.quiet-hidden{display:none!important}
+.view.show-quiet article.quiet-hidden{display:block!important}
+.quiet-toggle{font-size:9px}
+#usageStrip{display:none!important}
+.command-talk-control{right:16px!important;top:auto!important;bottom:16px!important;min-width:0!important;padding:9px 14px!important;border-radius:999px!important;gap:9px!important}
+.command-talk-control .talk-copy small{display:none!important}
+.command-talk-control .talk-copy strong{font-size:8px!important;letter-spacing:.08em}
+.wallpaper-side{opacity:0;pointer-events:none;transition:opacity .18s ease}
+#commandRoom:hover .wallpaper-side,.wallpaper-side:focus-within{opacity:1;pointer-events:auto}
+@media (max-width:650px){.wallpaper-side{opacity:1;pointer-events:auto}}
