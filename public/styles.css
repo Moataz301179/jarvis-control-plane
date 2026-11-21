@@ -601,8 +601,8 @@ body.jarvis-thinking .jarvis-chat-presence { height: 88px; opacity: .18; transfo
 #shell.chat-open .hero h1 { margin: 6px 0 0; max-width: 780px; font-size: clamp(28px, 3.2vw, 42px); }
 #shell.chat-open .hero-metrics { display: none; }
 #shell.chat-open .usage-strip { margin-bottom: 12px; }
-#shell.chat-open #overviewMetrics, #shell.chat-open #view-overview > .grid-2 { display: none; }
-#shell.chat-open .holo-room { min-height: 600px; height: calc(100vh - 176px); max-height: 760px; }
+#shell.chat-open #view-overview > .grid-2 { display: none; }
+#shell.chat-open .holo-room { min-height: 520px; height: calc(100vh - 300px); max-height: 680px; }
 #shell.chat-open .presence-animation { width: 430px; height: 430px; }
 
 #statusConsole { padding: 16px 12px 24px 0; }
