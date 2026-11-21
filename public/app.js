@@ -309,24 +309,25 @@ function updateHandsFreeButton(){const b=$('#handsFreeToggle');if(!b)return;b.se
 function toggleHandsFree(){
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   state.autoWake=!state.autoWake;
-  localStorage.setItem('jarvis_hands_free_v2',state.autoWake?'1':'0');
+  localStorage.setItem('jarvis_hands_free_v3',state.autoWake?'1':'0');
   updateHandsFreeButton();
   setChatWorkspace(true);
   ensureAudioContext();
   if(state.autoWake){
-    if(isIOSDevice){state.autoWake=false;localStorage.setItem('jarvis_hands_free_v2','0');updateHandsFreeButton();toast('Hands-free is not supported on iPhone. Tap the mic per turn.');return;}
+    if(isIOSDevice){state.autoWake=false;localStorage.setItem('jarvis_hands_free_v3','0');updateHandsFreeButton();toast('Hands-free is not supported on iPhone. Tap the mic per turn.');return;}
     if(!Recognition){toast('Hands-free wake word needs Chrome. On iPhone, tap the mic for each turn.');return;}
     armWakeWord();
     speak('Yes Boss. I am listening.');
     toast('Hands-free on. Say “JARVIS”.');
   } else { stopWakeWord(); toast('Hands-free off'); }
+  updateOverviewControls();
 }
 
 
 function updateOverviewControls(){
   const bar=$('#overviewControls');if(!bar)return;
   const voice=bar.querySelector('[data-control="voice"]');if(voice)voice.textContent=localStorage.getItem('jarvis_speak_replies_v2')!=='0'?'VOICE ON':'VOICE OFF';
-  const hands=bar.querySelector('[data-control="hands-free"]');if(hands)hands.textContent=state.autoWake?'HANDS-FREE ON':'HANDS-FREE OFF';
+  const hands=bar.querySelector('[data-control="hands-free"]');if(hands){hands.textContent=state.autoWake?'HANDS-FREE ON':'HANDS-FREE OFF';hands.classList.toggle('active',Boolean(state.autoWake));}
 }
 function toggleSpeakReplies(){
   const on=localStorage.getItem('jarvis_speak_replies_v2')!=='0';
@@ -374,8 +375,8 @@ function installHandsFreeControl(){
   const button=document.createElement('button');button.id='handsFreeToggle';button.className='mini-icon';button.type='button';button.textContent='⌁';button.title='Hands-free conversation';button.setAttribute('aria-label','Toggle hands-free conversation');
   actions.insertBefore(button,actions.firstChild);
   button.addEventListener('click',toggleHandsFree);
-  state.autoWake=!isIOSDevice&&localStorage.getItem('jarvis_hands_free_v2')==='1'&&Boolean(window.SpeechRecognition||window.webkitSpeechRecognition);
-  if(isIOSDevice)localStorage.setItem('jarvis_hands_free_v2','0');
+  state.autoWake=!isIOSDevice&&localStorage.getItem('jarvis_hands_free_v3')!=='0'&&Boolean(window.SpeechRecognition||window.webkitSpeechRecognition);
+  if(isIOSDevice)localStorage.setItem('jarvis_hands_free_v3','0');
   updateHandsFreeButton();
   document.addEventListener('pointerdown',()=>{if(state.autoWake&&!state.wakeArmed&&!state.wakeStarting&&localStorage.getItem('jarvis_speak_replies_v2')==='0')armWakeWord(true);},{once:true});
 }
