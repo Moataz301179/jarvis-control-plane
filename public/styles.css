@@ -710,3 +710,4 @@ body.jarvis-listening .presence-lip-glow, body.jarvis-listening .chat-lip-glow {
 .wallpaper-side{opacity:0;pointer-events:none;transition:opacity .18s ease}
 #commandRoom:hover .wallpaper-side,.wallpaper-side:focus-within{opacity:1;pointer-events:auto}
 @media (max-width:650px){.wallpaper-side{opacity:1;pointer-events:auto}}
+.command-talk-control{top:16px!important;bottom:auto!important;right:16px!important;padding:8px 12px!important;border-radius:999px!important;min-width:0!important}
