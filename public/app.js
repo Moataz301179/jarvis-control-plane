@@ -580,22 +580,37 @@ function renderSessions(){const list=$('#chatSessionList');if(!list)return;const
 async function openSession(id){try{const data=await api('/v1/conversations/'+encodeURIComponent(id));state.conversationId=data.conversation?.id||null;state.chatMessages=data.messages||[];renderChat();renderSessions();const last=[...state.chatMessages].reverse().find(m=>m.role==='assistant');updateHologram(last?.content||'');}catch(err){toast('Could not open session: '+err.message);}}
 function startNewChat(){state.conversationId=null;state.chatMessages=[];renderChat();renderSessions();updateHologram('');const input=$('#chatInput');if(input)input.focus();toast('New chat started');}
 function installChatSessions(){const body=document.querySelector('#chatConsole .intelligence-body');const header=body?.querySelector('.mini-chat-head');if(!body||!header||$('#chatSessions'))return;const panel=document.createElement('div');panel.id='chatSessions';panel.className='chat-sessions';panel.innerHTML='<div class="chat-sessions-head"><span class="micro">SESSIONS</span><button id="newChat" class="mini-icon" type="button" title="New chat" aria-label="Start a new chat">＋</button></div><div id="chatSessionList" class="chat-session-list"></div>';header.insertAdjacentElement('afterend',panel);$('#newChat').addEventListener('click',startNewChat);$('#chatSessionList').addEventListener('click',(event)=>{const button=event.target.closest('button[data-session-id]');if(button)openSession(button.dataset.sessionId);});loadSessions();}
+let sharedAudioContext=null;
+function ensureAudioContext(){
+  const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+  if(!AudioContextClass) return null;
+  if(!sharedAudioContext){
+    sharedAudioContext=new AudioContextClass();
+    try{const buffer=sharedAudioContext.createBuffer(1,1,22050);const source=sharedAudioContext.createBufferSource();source.buffer=buffer;source.connect(sharedAudioContext.destination);source.start(0);}catch{}
+  }
+  if(sharedAudioContext.state==='suspended') sharedAudioContext.resume().catch(()=>{});
+  return sharedAudioContext;
+}
+if(typeof document!=='undefined'){
+  const unlock=()=>{ensureAudioContext();};
+  document.addEventListener('pointerdown',unlock,{once:true,capture:true});
+  document.addEventListener('touchstart',unlock,{once:true,capture:true});
+  document.addEventListener('keydown',unlock,{once:true,capture:true});
+}
 async function playJarvisAudio(blob,finish){
   if(!blob?.size)throw new Error('The speech response was empty');
   const mediaType=blob.type||'audio/mpeg';
-  const AudioContextClass=window.AudioContext||window.webkitAudioContext;
-  if(AudioContextClass){
-    const context=new AudioContextClass();
+  const context=ensureAudioContext();
+  if(context){
     try{
       const decoded=await context.decodeAudioData((await blob.arrayBuffer()).slice(0));
       const source=context.createBufferSource();source.buffer=decoded;const analyser=context.createAnalyser();analyser.fftSize=1024;source.connect(analyser);analyser.connect(context.destination);state.voiceAnalyser=analyser;
       state.voiceAudioContext=context;state.voiceAudioSource=source;
-      source.onended=()=>{stopMouthAnimation();finish();context.close().catch(()=>{});if(state.voiceAudioContext===context)state.voiceAudioContext=null;if(state.voiceAudioSource===source)state.voiceAudioSource=null;};
+      source.onended=()=>{stopMouthAnimation();finish();if(state.voiceAudioSource===source)state.voiceAudioSource=null;};
       document.body.classList.add('jarvis-speaking');startAnalyserMouth(analyser);renderSoundState();await context.resume();source.start(0);return;
     }catch(error){
       console.warn('[JARVIS voice] Web Audio decode failed',{mediaType,bytes:blob.size,error:error?.message||String(error)});
-      context.close().catch(()=>{});
-      state.voiceAudioContext=null;state.voiceAudioSource=null;
+      state.voiceAudioSource=null;
     }
   }
   state.voiceAudioUrl=URL.createObjectURL(blob);
@@ -701,9 +716,8 @@ async function startMediaVoiceTurn(){
     const shouldSend=voiceTurnShouldSend;const blob=new Blob(voiceTurnChunks,{type:recorder.mimeType||mimeType||'audio/webm'});
     finishVoiceTurn();if(shouldSend)transcribeVoiceBlob(blob);
   };
-  const AudioContextClass=window.AudioContext||window.webkitAudioContext;
-  if(AudioContextClass){
-    const context=new AudioContextClass();voiceTurnAudioContext=context;
+  const context=ensureAudioContext();
+  if(context){voiceTurnAudioContext=context;
     const analyser=context.createAnalyser();analyser.fftSize=1024;const source=context.createMediaStreamSource(stream);source.connect(analyser);
     const samples=new Uint8Array(analyser.fftSize);let heardSpeech=false;let silenceStarted=0;
     voiceTurnVadTimer=setInterval(()=>{
