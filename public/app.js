@@ -144,51 +144,74 @@ function installChatPresence(){
   header.insertAdjacentElement('afterend',stage);body.classList.add('has-chat-presence');
 }
 function jarvisFaceMarkup(){
-  return `<svg class="jarvis-face-svg" viewBox="0 0 400 420" role="img" aria-label="JARVIS holographic face">
+  return `<svg class="jarvis-face-svg" viewBox="0 0 400 460" role="img" aria-label="JARVIS holographic face">
   <defs>
-    <radialGradient id="jf-head" cx="50%" cy="38%" r="62%"><stop offset="0%" stop-color="#5b3f86" stop-opacity=".95"/><stop offset="55%" stop-color="#2a1740" stop-opacity=".93"/><stop offset="100%" stop-color="#0b0613" stop-opacity=".97"/></radialGradient>
+    <linearGradient id="jf-hair" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2a0f3d"/><stop offset="55%" stop-color="#140820"/><stop offset="100%" stop-color="#3d1454"/></linearGradient>
+    <radialGradient id="jf-skin" cx="50%" cy="40%" r="62%"><stop offset="0%" stop-color="#e2d7f2"/><stop offset="55%" stop-color="#b9a7d1"/><stop offset="100%" stop-color="#6f578d"/></radialGradient>
+    <linearGradient id="jf-shoulder" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#251238"/><stop offset="100%" stop-color="#0a0613"/></linearGradient>
+    <linearGradient id="jf-lip" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#c04a7d"/><stop offset="60%" stop-color="#8e1f4b"/><stop offset="100%" stop-color="#4a0d28"/></linearGradient>
     <radialGradient id="jf-eye" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#eafff5"/><stop offset="35%" stop-color="#57ffb9"/><stop offset="75%" stop-color="#14b87a"/><stop offset="100%" stop-color="#0a5c43" stop-opacity=".2"/></radialGradient>
     <linearGradient id="jf-edge" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a66bff"/><stop offset="55%" stop-color="#4c2b73"/><stop offset="100%" stop-color="#35ffa8"/></linearGradient>
-    <radialGradient id="jf-mouth" cx="50%" cy="40%" r="60%"><stop offset="0%" stop-color="#9dffd6"/><stop offset="55%" stop-color="#1a8a63"/><stop offset="100%" stop-color="#071a14"/></radialGradient>
-    <filter id="jf-glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-    <filter id="jf-soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="12"/></filter>
+    <radialGradient id="jf-mouth" cx="50%" cy="40%" r="60%"><stop offset="0%" stop-color="#5a1030"/><stop offset="60%" stop-color="#2a0616"/><stop offset="100%" stop-color="#0a0208"/></radialGradient>
+    <filter id="jf-glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="jf-soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="10"/></filter>
+    <filter id="jf-smoke" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="5"/></filter>
   </defs>
-  <ellipse cx="200" cy="210" rx="150" ry="180" fill="#35ffa8" opacity=".08" filter="url(#jf-soft)"/>
+  <ellipse cx="200" cy="220" rx="150" ry="190" fill="#a66bff" opacity=".09" filter="url(#jf-soft)"/>
   <g class="jf-breathe">
-    <path d="M70 420 C80 350 130 320 200 318 C270 320 320 350 330 420 Z" fill="url(#jf-head)" stroke="url(#jf-edge)" stroke-width="1.5" opacity=".9"/>
-    <path d="M120 420 C130 368 160 344 200 342 C240 344 270 368 280 420" fill="none" stroke="#35ffa8" stroke-opacity=".45" stroke-width="1.2"/>
-    <path d="M165 300 L165 345 C165 365 235 365 235 345 L235 300 Z" fill="#140a22" stroke="url(#jf-edge)" stroke-width="1.2"/>
-    <path d="M200 52 C130 52 92 108 92 180 C92 248 138 300 200 312 C262 300 308 248 308 180 C308 108 270 52 200 52 Z" fill="url(#jf-head)" stroke="url(#jf-edge)" stroke-width="2"/>
-    <path d="M132 120 C160 96 240 96 268 120 L258 150 C228 132 172 132 142 150 Z" fill="#1a0f2a" stroke="#8b5cf6" stroke-opacity=".55"/>
-    <path d="M150 104 L250 104" stroke="#35ffa8" stroke-opacity=".5" stroke-width="1.5"/>
-    <g stroke="#a66bff" stroke-opacity=".18" fill="none" stroke-width="1">
-      <path d="M110 170 C140 180 170 185 200 185 C230 185 260 180 290 170"/>
-      <path d="M108 220 C140 232 170 238 200 238 C230 238 260 232 292 220"/>
-      <path d="M140 260 C165 272 235 272 260 260"/>
-      <path d="M200 60 L200 100"/><path d="M120 140 L150 160"/><path d="M280 140 L250 160"/>
+    <!-- shoulders -->
+    <path d="M54 460 C68 392 124 364 200 362 C276 364 332 392 346 460 Z" fill="url(#jf-shoulder)" stroke="url(#jf-edge)" stroke-width="1.4"/>
+    <path d="M120 460 C130 410 162 388 200 386 C238 388 270 410 280 460" fill="none" stroke="#35ffa8" stroke-opacity=".35" stroke-width="1.2"/>
+    <!-- neck -->
+    <path d="M169 308 L169 366 C169 384 231 384 231 366 L231 308 Z" fill="#1c0f2b" stroke="url(#jf-edge)" stroke-width="1.2"/>
+    <path d="M180 330 L220 330" stroke="#35ffa8" stroke-opacity=".25"/>
+    <!-- hair back -->
+    <path d="M200 40 C118 40 82 104 84 192 C86 252 68 302 56 366 C90 380 116 356 124 324 C114 272 120 222 118 192 C118 128 150 86 200 86 C250 86 282 128 282 192 C280 222 286 272 276 324 C284 356 310 380 344 366 C332 302 314 252 316 192 C318 104 282 40 200 40 Z" fill="url(#jf-hair)" stroke="#a66bff" stroke-opacity=".35" stroke-width="1.2"/>
+    <!-- face -->
+    <path d="M200 92 C150 92 124 138 124 196 C124 258 156 304 200 320 C244 304 276 258 276 196 C276 138 250 92 200 92 Z" fill="url(#jf-skin)"/>
+    <path d="M124 196 C136 190 146 194 150 204 C144 236 152 270 176 292 C158 288 132 252 124 196 Z" fill="#7a5f99" opacity=".35" filter="url(#jf-smoke)"/>
+    <path d="M276 196 C264 190 254 194 250 204 C256 236 248 270 224 292 C242 288 268 252 276 196 Z" fill="#7a5f99" opacity=".30" filter="url(#jf-smoke)"/>
+    <!-- hair fringe -->
+    <path d="M124 170 C128 118 158 92 200 92 C242 92 272 118 276 170 C258 146 236 134 214 142 C208 122 190 120 180 144 C160 134 138 146 124 170 Z" fill="url(#jf-hair)"/>
+    <path d="M124 176 C114 226 118 282 132 326 C120 304 108 252 112 202 Z" fill="url(#jf-hair)" stroke="#a66bff" stroke-opacity=".3"/>
+    <path d="M276 176 C286 226 282 282 268 326 C280 304 292 252 288 202 Z" fill="url(#jf-hair)" stroke="#a66bff" stroke-opacity=".3"/>
+    <!-- hologram grid -->
+    <g stroke="#35ffa8" stroke-opacity=".14" fill="none" stroke-width=".8">
+      <path d="M138 214 C160 222 240 222 262 214"/><path d="M136 244 C160 252 240 252 264 244"/>
+      <path d="M200 96 L200 132"/><path d="M154 176 L176 186"/><path d="M246 176 L224 186"/>
     </g>
-    <circle cx="96" cy="200" r="26" fill="#0b0613" stroke="url(#jf-edge)" stroke-width="2"/><circle cx="96" cy="200" r="14" fill="none" stroke="#35ffa8" stroke-opacity=".8" stroke-width="2"/>
-    <circle cx="304" cy="200" r="26" fill="#0b0613" stroke="url(#jf-edge)" stroke-width="2"/><circle cx="304" cy="200" r="14" fill="none" stroke="#35ffa8" stroke-opacity=".8" stroke-width="2"/>
-    <path d="M132 168 C150 158 178 158 190 166" fill="none" stroke="#0d0714" stroke-width="8" stroke-linecap="round"/>
-    <path d="M268 168 C250 158 222 158 210 166" fill="none" stroke="#0d0714" stroke-width="8" stroke-linecap="round"/>
+    <!-- brows -->
+    <path d="M134 174 C148 160 176 158 190 168" fill="none" stroke="#1a0b26" stroke-width="6" stroke-linecap="round"/>
+    <path d="M266 174 C252 160 224 158 210 168" fill="none" stroke="#1a0b26" stroke-width="6" stroke-linecap="round"/>
+    <!-- smoky eyes -->
+    <ellipse cx="161" cy="193" rx="30" ry="18" fill="#2a1038" opacity=".55" filter="url(#jf-smoke)"/>
+    <ellipse cx="239" cy="193" rx="30" ry="18" fill="#2a1038" opacity=".55" filter="url(#jf-smoke)"/>
     <g filter="url(#jf-glow)">
-      <ellipse cx="163" cy="186" rx="26" ry="12" fill="#0a1a13" stroke="#35ffa8" stroke-opacity=".55"/><ellipse cx="163" cy="186" rx="12" ry="10" fill="url(#jf-eye)"/><circle cx="163" cy="186" r="4" fill="#eafff5"/>
-      <ellipse cx="237" cy="186" rx="26" ry="12" fill="#0a1a13" stroke="#35ffa8" stroke-opacity=".55"/><ellipse cx="237" cy="186" rx="12" ry="10" fill="url(#jf-eye)"/><circle cx="237" cy="186" r="4" fill="#eafff5"/>
+      <path d="M136 192 C146 180 176 180 186 192 C176 202 146 202 136 192 Z" fill="#0b0710"/>
+      <ellipse cx="161" cy="192" rx="9" ry="8" fill="url(#jf-eye)"/><circle cx="161" cy="192" r="3" fill="#eafff5"/>
+      <path d="M264 192 C254 180 224 180 214 192 C224 202 254 202 264 192 Z" fill="#0b0710"/>
+      <ellipse cx="239" cy="192" rx="9" ry="8" fill="url(#jf-eye)"/><circle cx="239" cy="192" r="3" fill="#eafff5"/>
     </g>
-    <path d="M200 196 L192 240 C196 246 204 246 208 240 Z" fill="#1a0f2a" stroke="#a66bff" stroke-opacity=".35"/>
-    <path d="M140 230 C150 252 165 266 178 272" fill="none" stroke="#a66bff" stroke-opacity=".25"/><path d="M260 230 C250 252 235 266 222 272" fill="none" stroke="#a66bff" stroke-opacity=".25"/>
-    <g class="jf-mouth">
-      <ellipse class="jf-mouth-glow" cx="200" cy="286" rx="42" ry="20" fill="#35ffa8" opacity="0" filter="url(#jf-soft)"/>
-      <path class="jf-lips-upper" d="M160 282 C176 272 188 276 200 280 C212 276 224 272 240 282" fill="none" stroke="#7d699c" stroke-width="3" stroke-linecap="round"/>
-      <path class="jf-lips-lower" d="M160 290 C176 300 188 298 200 296 C212 298 224 300 240 290" fill="none" stroke="#7d699c" stroke-width="3" stroke-linecap="round"/>
-      <g class="jf-mouth-open">
-        <ellipse cx="200" cy="288" rx="34" ry="16" fill="url(#jf-mouth)"/>
-        <path d="M172 282 C184 278 194 278 200 280 C206 278 216 278 228 282" fill="none" stroke="#bfffe8" stroke-width="2" stroke-linecap="round" opacity=".75"/>
-        <ellipse cx="200" cy="296" rx="16" ry="5" fill="#35ffa8" opacity=".35"/>
-      </g>
+    <path d="M136 190 C146 180 176 180 186 190" fill="none" stroke="#120818" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M264 190 C254 180 224 180 214 190" fill="none" stroke="#120818" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M136 190 L126 184 M264 190 L274 184" stroke="#120818" stroke-width="2.4" stroke-linecap="round"/>
+    <!-- nose -->
+    <path d="M200 202 C196 222 193 238 197 246 C200 249 204 249 207 246 C211 238 208 222 204 202 Z" fill="#8a72a6" opacity=".35"/>
+    <path d="M194 246 C197 249 203 249 206 246" fill="none" stroke="#5f477a" stroke-width="1.6"/>
+    <!-- lips -->
+    <path d="M170 288 C180 276 192 280 200 286 C208 280 220 276 230 288 C218 292 182 292 170 288 Z" fill="url(#jf-lip)"/>
+    <path d="M172 290 C184 304 216 304 228 290 C214 298 186 298 172 290 Z" fill="url(#jf-lip)"/>
+    <ellipse class="jf-mouth-glow" cx="200" cy="294" rx="34" ry="16" fill="#c04a7d" opacity="0" filter="url(#jf-soft)"/>
+    <g class="jf-mouth-open">
+      <ellipse cx="200" cy="295" rx="22" ry="10" fill="url(#jf-mouth)"/>
+      <path d="M182 290 C190 287 196 288 200 289 C204 288 210 287 218 290" fill="none" stroke="#f4dbe6" stroke-width="1.6" opacity=".8"/>
+      <ellipse cx="200" cy="299" rx="10" ry="3" fill="#c04a7d" opacity=".4"/>
     </g>
-    <path d="M168 306 C180 314 220 314 232 306" fill="none" stroke="#35ffa8" stroke-opacity=".4" stroke-width="2"/>
-    <rect class="jf-scan" x="92" y="52" width="216" height="6" fill="#35ffa8" opacity=".08"/>
+    <path d="M170 288 C180 276 192 280 200 286 C208 280 220 276 230 288" fill="none" stroke="#f0b7cc" stroke-opacity=".35" stroke-width="1"/>
+    <!-- jaw/chin -->
+    <path d="M168 312 C180 322 220 322 232 312" fill="none" stroke="#35ffa8" stroke-opacity=".25" stroke-width="1.4"/>
+    <!-- scanline -->
+    <rect class="jf-scan" x="124" y="92" width="152" height="5" fill="#35ffa8" opacity=".07"/>
   </g>
 </svg>`;
 }
