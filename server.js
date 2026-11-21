@@ -1343,8 +1343,9 @@ async function summarizeConversation(id) {
           { role: 'user', content: transcript },
         ],
         options: { temperature: 0.2, num_predict: 240 },
+        keep_alive: '10m',
       }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(60000),
     });
     if (response.ok) {
       const body = await response.json().catch(() => ({}));
