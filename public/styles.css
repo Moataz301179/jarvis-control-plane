@@ -740,3 +740,22 @@ body.jarvis-speaking .jf-mouth-glow{opacity:calc(.15 + var(--mouth,0)*.4)}
 @keyframes jf-scan{from{transform:translateY(0);opacity:.08}to{transform:translateY(240px);opacity:0}}
 .jarvis-chat-presence .jarvis-face-svg{position:absolute;left:50%;top:50%;width:min(88%,390px);height:auto;transform:translate(-50%,-50%)}
 body.jarvis-speaking .jarvis-chat-presence .jarvis-face-svg{filter:drop-shadow(0 0 24px rgba(53,255,168,.36))}
+
+/* Hologram character library */
+.character-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:10px}
+.character-card{display:flex;gap:10px;align-items:center;padding:10px;border:1px solid #2e1c3b;border-radius:8px;background:#0d0713}
+.character-card.active{border-color:#35ffa8;box-shadow:0 0 0 1px rgba(53,255,168,.25)}
+.character-thumb{width:56px;height:56px;border-radius:50%;object-fit:cover;border:1px solid #4b2a63;flex:0 0 56px}
+.builtin-thumb{display:grid;place-items:center;background:#1a0f2a;color:#35ffa8;font-family:"Space Grotesk",sans-serif;font-size:24px}
+.character-card strong{display:block;font-size:12px}
+.character-card small{display:block;color:#8f789f;font-size:9px}
+.character-card .button-row{margin-left:auto;display:flex;gap:5px;flex-wrap:wrap}
+.mouth-controls{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:6px}
+.mouth-controls input[type=range]{width:100%;accent-color:#b55dff}
+.photo-face{position:relative;width:100%;height:100%;overflow:hidden;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.photo-face-img{width:100%;height:100%;object-fit:cover;opacity:.95;filter:brightness(1.05) contrast(1.05) saturate(1.05) drop-shadow(0 0 24px rgba(53,255,168,.25))}
+.photo-face::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 50% 45%, rgba(53,255,168,.05), rgba(10,6,19,.18) 62%, rgba(10,6,19,.4));pointer-events:none}
+.photo-mouth{position:absolute;transform:translate(-50%,-50%);pointer-events:none;mix-blend-mode:screen}
+.photo-mouth-open{display:block;width:100%;height:100%;border-radius:50%;background:radial-gradient(ellipse at 50% 50%, rgba(255,140,185,.9), rgba(150,25,70,.7) 45%, rgba(20,4,10,0) 76%);filter:blur(1px);opacity:calc(.12 + var(--mouth,0)*.78);transform:scaleY(calc(.22 + var(--mouth,0)*.78))}
+.photo-scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg, rgba(53,255,168,.05) 0 1px, transparent 1px 4px);mix-blend-mode:screen;animation:jf-scan 4s linear infinite;pointer-events:none}
+.jarvis-chat-presence .photo-face{position:absolute;left:50%;top:50%;width:min(88%,390px);aspect-ratio:1;transform:translate(-50%,-50%)}

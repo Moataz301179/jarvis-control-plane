@@ -1176,6 +1176,62 @@ async function createVoiceSession() {
   }
 }
 
+
+const CHARACTER_ROOT = '/srv/jarvis/shared/characters';
+
+async function listCharacters() {
+  const rows = await query('SELECT id,name,mouth,created_at FROM hologram_characters ORDER BY created_at');
+  const activeRow = (await query("SELECT value FROM runtime_settings WHERE key='hologram.character'")).rows[0];
+  const active = activeRow?.value || 'builtin';
+  return { characters: rows.rows, active };
+}
+
+async function saveCharacter(body) {
+  const name = String(body.name || '').trim().slice(0, 60);
+  if (!name) throw Object.assign(new Error('A character name is required'), { statusCode: 400 });
+  const match = String(body.image_data_url || '').match(/^data:(image\/(png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) throw Object.assign(new Error('Upload a PNG, JPEG or WebP image'), { statusCode: 400 });
+  const mime = match[1];
+  const ext = match[2] === 'jpeg' ? 'jpg' : match[2];
+  const buffer = Buffer.from(match[3], 'base64');
+  if (!buffer.length || buffer.length > 4 * 1024 * 1024) throw Object.assign(new Error('Image must be between 1 byte and 4 MB'), { statusCode: 400 });
+  const mouth = body.mouth && typeof body.mouth === 'object' ? body.mouth : { x: 50, y: 62, w: 18, h: 9 };
+  await fs.mkdir(CHARACTER_ROOT, { recursive: true });
+  const inserted = await query('INSERT INTO hologram_characters (name,mime,mouth) VALUES ($1,$2,$3) RETURNING id,name,mouth,created_at', [name, mime, JSON.stringify(mouth)]);
+  const id = inserted.rows[0].id;
+  const filePath = path.join(CHARACTER_ROOT, `${id}.${ext}`);
+  await fs.writeFile(filePath, buffer);
+  await query('UPDATE hologram_characters SET file_path=$2 WHERE id=$1', [id, filePath]);
+  return inserted.rows[0];
+}
+
+async function selectCharacter(id) {
+  if (id !== 'builtin') {
+    const found = await query('SELECT id FROM hologram_characters WHERE id=$1', [id]);
+    if (!found.rows.length) throw Object.assign(new Error('Character not found'), { statusCode: 404 });
+  }
+  await query("INSERT INTO runtime_settings (key,value,updated_at) VALUES ('hologram.character',$1,now()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()", [JSON.stringify(id)]);
+  return listCharacters();
+}
+
+async function updateCharacterMouth(id, mouth) {
+  const clamp = (value, fallback) => Math.max(0, Math.min(100, Number(value ?? fallback)));
+  const value = { x: clamp(mouth?.x, 50), y: clamp(mouth?.y, 62), w: clamp(mouth?.w, 18), h: clamp(mouth?.h, 9) };
+  const result = await query('UPDATE hologram_characters SET mouth=$2 WHERE id=$1 RETURNING id,name,mouth,created_at', [id, JSON.stringify(value)]);
+  if (!result.rows.length) throw Object.assign(new Error('Character not found'), { statusCode: 404 });
+  return result.rows[0];
+}
+
+async function deleteCharacter(id) {
+  const row = (await query('SELECT id,file_path FROM hologram_characters WHERE id=$1', [id])).rows[0];
+  if (!row) throw Object.assign(new Error('Character not found'), { statusCode: 404 });
+  if (row.file_path) await fs.rm(row.file_path, { force: true }).catch(() => null);
+  await query('DELETE FROM hologram_characters WHERE id=$1', [id]);
+  const activeRow = (await query("SELECT value FROM runtime_settings WHERE key='hologram.character'")).rows[0];
+  if (activeRow?.value === id) await selectCharacter('builtin');
+  return listCharacters();
+}
+
 async function getRuntimeSettings() {
   const rows = await query('SELECT key,value FROM runtime_settings');
   const values = Object.fromEntries(rows.rows.map((row) => [row.key, row.value]));
@@ -3138,6 +3194,22 @@ async function handle(req, res) {
     throw error;
   }
   if (req.method === 'GET' && url.pathname.startsWith('/v1/')) await requirePermission(req, 'read');
+  if (req.method === 'GET' && url.pathname === '/v1/characters') { await requirePermission(req, 'read'); return sendJson(res, 200, await listCharacters()); }
+  if (req.method === 'POST' && url.pathname === '/v1/characters') { await requirePermission(req, 'provider:write'); req.body = (await readJson(req)) || {}; return sendJson(res, 201, await saveCharacter(req.body)); }
+  const characterImageMatch = url.pathname.match(/^\/v1\/characters\/([0-9a-f-]{36})\/image$/);
+  if (req.method === 'GET' && characterImageMatch) {
+    await requirePermission(req, 'read');
+    const row = (await query('SELECT mime,file_path FROM hologram_characters WHERE id=$1', [characterImageMatch[1]])).rows[0];
+    if (!row) throw Object.assign(new Error('Character not found'), { statusCode: 404 });
+    const buffer = await fs.readFile(row.file_path);
+    res.writeHead(200, { 'content-type': row.mime, 'content-length': buffer.length, 'cache-control': 'private, max-age=300' });
+    return res.end(buffer);
+  }
+  const characterSelectMatch = url.pathname.match(/^\/v1\/characters\/([0-9a-f-]{36}|builtin)\/select$/);
+  if (req.method === 'POST' && characterSelectMatch) { await requirePermission(req, 'provider:write'); return sendJson(res, 200, await selectCharacter(characterSelectMatch[1])); }
+  const characterMatch = url.pathname.match(/^\/v1\/characters\/([0-9a-f-]{36})$/);
+  if (req.method === 'PATCH' && characterMatch) { await requirePermission(req, 'provider:write'); req.body = (await readJson(req)) || {}; return sendJson(res, 200, await updateCharacterMouth(characterMatch[1], req.body.mouth)); }
+  if (req.method === 'DELETE' && characterMatch) { await requirePermission(req, 'provider:write'); return sendJson(res, 200, await deleteCharacter(characterMatch[1])); }
   if (req.method === 'GET' && url.pathname === '/v1/settings') return sendJson(res, 200, await settingsState());
   if (req.method === 'PATCH' && url.pathname === '/v1/settings') { await requirePermission(req, 'provider:write'); req.body = await readJson(req); return sendJson(res, 200, await updateRuntimeSettings(req.body)); }
   if (req.method === 'GET' && url.pathname === '/v1/access') return sendJson(res, 200, await accessState());

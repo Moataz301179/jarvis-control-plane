@@ -1,5 +1,5 @@
 if (window.location.protocol === 'file:') window.location.replace('http://127.0.0.1:13100/');
-  const state = { status: null, data: null, settings: null, ollamaStatus: null, telegramStatus: null, nousStatus: null, agentRingStatus: null, githubStatus: null, repositories: [], ventureRepositories: [], capabilityAudit: null, hermesState: null, memoryEntries: [], approvals: [], accountConnections: [], factory: {catalog:null,agents:[],runs:[],schedules:[],handoffs:[]}, selectedAgent: null, selectedProject: null, conversationId: null, chatMessages: [], imageData: null, imageName: null, muted: false, micMuted: false, listening: false, elevenStatus: null, voiceSession: null, voiceAudio: null, voiceAudioUrl: null, voiceAudioContext: null, voiceAudioSource: null, audioMeterFrame: null, wakeArmed: false, wakeStarting: false, wakeRecognition: null, wakeRestartTimer: null, rearmAfterVoice: false, autoWake: false };
+  const state = { character: { kind: 'builtin' }, characters: [], status: null, data: null, settings: null, ollamaStatus: null, telegramStatus: null, nousStatus: null, agentRingStatus: null, githubStatus: null, repositories: [], ventureRepositories: [], capabilityAudit: null, hermesState: null, memoryEntries: [], approvals: [], accountConnections: [], factory: {catalog:null,agents:[],runs:[],schedules:[],handoffs:[]}, selectedAgent: null, selectedProject: null, conversationId: null, chatMessages: [], imageData: null, imageName: null, muted: false, micMuted: false, listening: false, elevenStatus: null, voiceSession: null, voiceAudio: null, voiceAudioUrl: null, voiceAudioContext: null, voiceAudioSource: null, audioMeterFrame: null, wakeArmed: false, wakeStarting: false, wakeRecognition: null, wakeRestartTimer: null, rearmAfterVoice: false, autoWake: false };
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
 const titleCase = (value) => String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
@@ -144,6 +144,11 @@ function installChatPresence(){
   header.insertAdjacentElement('afterend',stage);body.classList.add('has-chat-presence');
 }
 function jarvisFaceMarkup(){
+  const character=state.character||{kind:'builtin'};
+  if(character.kind==='photo'){
+    const mouth=character.mouth||{x:50,y:62,w:18,h:9};
+    return `<div class="photo-face"><img class="photo-face-img" src="/v1/characters/${encodeURIComponent(character.id)}/image" alt="${esc(character.name||'Character')}" draggable="false"><span class="photo-mouth" style="left:${Number(mouth.x)||50}%;top:${Number(mouth.y)||62}%;width:${Number(mouth.w)||18}%;height:${Number(mouth.h)||9}%"><span class="photo-mouth-open"></span></span><i class="photo-scan"></i></div>`;
+  }
   return `<svg class="jarvis-face-svg" viewBox="0 0 400 460" role="img" aria-label="JARVIS holographic face">
   <defs>
     <linearGradient id="jf-hair" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2a0f3d"/><stop offset="55%" stop-color="#140820"/><stop offset="100%" stop-color="#3d1454"/></linearGradient>
@@ -226,6 +231,64 @@ function jarvisFaceMarkup(){
     <rect class="jf-scan" x="124" y="92" width="152" height="5" fill="#35ffa8" opacity=".07"/>
   </g>
 </svg>`;
+}
+
+function applyCharacterMarkup(){
+  document.querySelectorAll('.jarvis-face-stack').forEach((node)=>{node.innerHTML=jarvisFaceMarkup();});
+  document.querySelectorAll('.jarvis-chat-presence').forEach((node)=>{node.innerHTML=jarvisFaceMarkup();});
+}
+async function loadCharacters(){
+  try{
+    const data=await api('/v1/characters');
+    state.characters=data.characters||[];
+    const active=data.active||'builtin';
+    const found=active==='builtin'?null:state.characters.find((item)=>item.id===active);
+    state.character=found?{kind:'photo',id:found.id,name:found.name,mouth:found.mouth}:{kind:'builtin'};
+    applyCharacterMarkup();renderCharacters();
+  }catch(error){const node=$('#characterMessage');if(node)node.textContent=error.message;}
+}
+function renderCharacters(){
+  const grid=$('#characterGrid');if(!grid)return;
+  const active=state.character?.kind==='photo'?state.character.id:'builtin';
+  const count=$('#characterCount');if(count)count.textContent=`${state.characters.length+1} FACES`;
+  const builtin=`<article class="character-card ${active==='builtin'?'active':''}"><div class="character-thumb builtin-thumb">J</div><div><strong>JARVIS Woman</strong><small>Vector · full lip-sync</small></div><div class="button-row"><button class="holo-button" data-character-select="builtin">${active==='builtin'?'ACTIVE':'SELECT'}</button></div></article>`;
+  const photos=state.characters.map((character)=>{
+    const mouth=character.mouth||{x:50,y:62,w:18,h:9};
+    return `<article class="character-card ${active===character.id?'active':''}"><img class="character-thumb" src="/v1/characters/${encodeURIComponent(character.id)}/image" alt=""><div style="min-width:0"><strong>${esc(character.name)}</strong><small>Photo · adjustable mouth</small><div class="mouth-controls" data-mouth-id="${esc(character.id)}"><input type="range" min="0" max="100" value="${Number(mouth.x)||50}" data-axis="x" title="Mouth X %"><input type="range" min="0" max="100" value="${Number(mouth.y)||62}" data-axis="y" title="Mouth Y %"><input type="range" min="2" max="60" value="${Number(mouth.w)||18}" data-axis="w" title="Mouth width %"><input type="range" min="1" max="40" value="${Number(mouth.h)||9}" data-axis="h" title="Mouth height %"></div></div><div class="button-row"><button class="holo-button" data-character-select="${esc(character.id)}">${active===character.id?'ACTIVE':'SELECT'}</button><button class="holo-button" data-character-delete="${esc(character.id)}">REMOVE</button></div></article>`;
+  }).join('');
+  grid.innerHTML=builtin+photos;
+}
+function installCharacterControls(){
+  const settings=$('#view-settings');const runtime=$('#runtimeSettings')?.closest('article');if(!settings||!runtime||$('#characterForm'))return;
+  const panel=document.createElement('article');panel.className='panel';
+  panel.innerHTML='<div class="panel-head"><div><span class="micro">APPEARANCE</span><h3>Hologram characters</h3></div><span id="characterCount" class="pill">1 FACE</span></div><p class="muted">Choose the face JARVIS wears. The built-in vector face has full lip-sync. Uploaded photos get an adjustable glowing mouth you can place over the lips.</p><form id="characterForm" class="form-grid"><label>NAME<input id="characterName" required maxlength="60" placeholder="Batwoman-inspired"></label><label class="wide">PHOTO (PNG/JPG/WEBP · MAX 4 MB)<input id="characterPhoto" type="file" accept="image/png,image/jpeg,image/webp"></label><div class="form-actions"><button class="holo-button primary" type="submit">ADD CHARACTER</button></div></form><p id="characterMessage" class="status-message"></p><div id="characterGrid" class="character-grid"></div>';
+  settings.insertBefore(panel,runtime);
+  $('#characterForm').addEventListener('submit',async(e)=>{
+    e.preventDefault();
+    const file=$('#characterPhoto').files?.[0];const name=$('#characterName').value.trim();
+    if(!file){$('#characterMessage').textContent='Choose a photo first';return;}
+    if(file.size>4*1024*1024){$('#characterMessage').textContent='Photo must be 4 MB or smaller';return;}
+    const reader=new FileReader();
+    reader.onload=async()=>{try{$('#characterMessage').textContent='Uploading…';await api('/v1/characters',{method:'POST',body:JSON.stringify({name,image_data_url:reader.result})});$('#characterPhoto').value='';$('#characterName').value='';$('#characterMessage').textContent='Character added';await loadCharacters();}catch(error){$('#characterMessage').textContent=error.message;}};
+    reader.readAsDataURL(file);
+  });
+  $('#characterGrid').addEventListener('click',async(e)=>{
+    const select=e.target.closest('[data-character-select]');const remove=e.target.closest('[data-character-delete]');
+    try{
+      if(select){await api(`/v1/characters/${encodeURIComponent(select.dataset.characterSelect)}/select`,{method:'POST'});await loadCharacters();toast('Hologram character selected');}
+      else if(remove){await api('/v1/characters/'+encodeURIComponent(remove.dataset.characterDelete),{method:'DELETE'});await loadCharacters();toast('Character removed');}
+    }catch(error){$('#characterMessage').textContent=error.message;}
+  });
+  $('#characterGrid').addEventListener('change',async(e)=>{
+    const input=e.target.closest('.mouth-controls input');if(!input)return;
+    const group=input.closest('.mouth-controls');const id=group?.dataset.mouthId;if(!id)return;
+    const mouth={};group.querySelectorAll('input').forEach((slider)=>{mouth[slider.dataset.axis]=Number(slider.value);});
+    try{
+      const updated=await api('/v1/characters/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({mouth})});
+      if(state.character?.kind==='photo'&&state.character.id===id){state.character.mouth=updated.mouth;applyCharacterMarkup();}
+    }catch(error){$('#characterMessage').textContent=error.message;}
+  });
+  loadCharacters();
 }
 function installPresenceLipSync(){
   const presence=document.getElementById('presenceAnimation');if(!presence||presence.querySelector('.jarvis-face-stack'))return;
@@ -335,7 +398,7 @@ function groupSettingsSections(){
   const panels=[...view.querySelectorAll('article.panel')];
   const titleOf=(panel)=>(panel.querySelector('h3')?.textContent||'').trim();
   view.querySelectorAll('.settings-group').forEach((node)=>node.remove());
-  const groups=[['VOICE',['ElevenLabs session limits','ElevenLabs secure setup']],['PHONE',['Call the owner from the Mac','Call the owner over the internet','Outbound owner calls']],['CHANNELS',['Private JARVIS channel','Open JARVIS on your phone']],['PROVIDERS',['API key and gateway']],['SYSTEM',['Provider usage','24/7 health monitoring','Infrastructure state']]];
+  const groups=[['APPEARANCE',['Hologram characters']],['VOICE',['ElevenLabs session limits','ElevenLabs secure setup']],['PHONE',['Call the owner from the Mac','Call the owner over the internet','Outbound owner calls']],['CHANNELS',['Private JARVIS channel','Open JARVIS on your phone']],['PROVIDERS',['API key and gateway']],['SYSTEM',['Provider usage','24/7 health monitoring','Infrastructure state']]];
   const ordered=[];const used=new Set();
   for(const [label,titles] of groups){const matched=[];for(const title of titles){for(const panel of panels){if(!used.has(panel)&&titleOf(panel)===title){matched.push(panel);used.add(panel);}}}if(matched.length){ordered.push({label});matched.forEach((panel)=>ordered.push({panel}));}}
   for(const panel of panels){if(!used.has(panel))ordered.push({panel});}
@@ -475,7 +538,7 @@ function renderRepositories(){const data=state.repositories?.repositories||[];$(
 function renderVentureRepositories(){const node=$('#ventureRepositoryList');if(!node)return;const data=state.ventureRepositories||[];$('#ventureRepoCount').textContent=`${data.length} REPOSITORIES`;node.innerHTML=data.length?data.map(repo=>`<div class="system-row"><div><strong>${esc(repo.repo_full_name)}</strong><small>${esc(repo.business_scope)} · ${esc(repo.visibility)} · ${esc(repo.handover_status)}${repo.local_path?` · ${esc(repo.local_path)}`:' · remote only'}</small><small>${esc(repo.role)}</small></div><span class="pill ${repo.local_path?'':'off'}">${repo.local_path?'LOCAL':'REMOTE'}</span></div>`).join(''):'<div class="empty-state">No repository registry imported.</div>';}
 function renderHermes(){const node=$('#hermesBridgeStatus');if(!node)return;const data=state.hermesState||{};const bridge=data.bridge||{};const online=bridge.last_seen&&Date.now()-new Date(bridge.last_seen).getTime()<60000&&bridge.gateway_status==='online';node.textContent=online?'CONNECTED':'NOT CONNECTED';node.className=`status ${online?'completed':'failed'}`;$('#hermesProfile').textContent=`${bridge.profile||'default'} · ${online?`last seen ${formatTime(bridge.last_seen)}`:'waiting for Mac bridge'}`;$('#hermesGateway').textContent=(bridge.gateway_status||'offline').toUpperCase();$('#hermesGateway').className=`pill ${online?'':'off'}`;const jobs=data.jobs||[];$('#hermesJobs').innerHTML=jobs.length?jobs.slice(0,20).map(job=>`<div class="system-row"><div><strong>${esc(job.title)}</strong><small>${esc(job.project_code)} · ${esc(job.risk)} · ${esc((job.toolsets||[]).join(', '))} · ${formatTime(job.created_at)}</small>${job.result?`<small>${esc(String(job.result).slice(0,260))}</small>`:''}</div>${statusBadge(job.status)}</div>`).join(''):'<div class="empty-state">No Hermes jobs yet.</div>';}
 function renderMemory(){const list=$('#memorySearchResults');if(!list)return;const data=state.memoryEntries||[];$('#memoryCount').textContent=`${data.length} ENTRIES`;list.innerHTML=data.length?data.map(item=>`<div class="system-row"><div><strong>${esc(item.title)}</strong><small>${esc(item.project_code)} · ${esc(item.agent_id)} · ${esc(item.confidence)} · ${formatTime(item.updated_at)}</small><small>${esc(String(item.content).slice(0,320))}</small></div><span class="pill">${esc(item.memory_type)}</span></div>`).join(''):'<div class="empty-state">No shared memory entries found.</div>';}
-async function loadData(){const [data,settings,ollamaStatus,telegramStatus,nousStatus,agentRingStatus,githubStatus,repositories,ventureRepositories,hermesData,memoryData,approvalData,accountData]=await Promise.all([api('/v1/agents-projects/state'),api('/v1/settings'),api('/v1/providers/ollama/status'),api('/v1/providers/telegram/status'),api('/v1/providers/nous/status'),api('/v1/agent-ring'),api('/v1/providers/github/status'),api('/v1/repositories'),api('/v1/venture/repositories'),api('/v1/hermes/state'),api('/v1/memory?project_code=STUDIO'),api('/v1/approvals'),api('/v1/account-connections')]);state.data=data;state.settings=settings;state.ollamaStatus=ollamaStatus;state.telegramStatus=telegramStatus;state.nousStatus=nousStatus;state.agentRingStatus=agentRingStatus;state.githubStatus=githubStatus;state.repositories=repositories;state.ventureRepositories=ventureRepositories.repositories||[];state.hermesState=hermesData;state.memoryEntries=memoryData.memories||[];state.approvals=approvalData.pending||[];state.accountConnections=accountData.accounts||[];renderRepositories();renderVentureRepositories();renderHermes();renderMemory();renderGithubStatus();renderApprovals();renderAccountConnections();renderOverview();loadProviderKeys().catch(()=>null);loadSecurityScope().catch(()=>null);loadTwilioStatus().catch(()=>null);loadFaceTimeStatus().catch(()=>null);Promise.all([loadStatus(),loadElevenStatus(),loadFactoryData()]).catch(()=>null);}
+async function loadData(){const [data,settings,ollamaStatus,telegramStatus,nousStatus,agentRingStatus,githubStatus,repositories,ventureRepositories,hermesData,memoryData,approvalData,accountData]=await Promise.all([api('/v1/agents-projects/state'),api('/v1/settings'),api('/v1/providers/ollama/status'),api('/v1/providers/telegram/status'),api('/v1/providers/nous/status'),api('/v1/agent-ring'),api('/v1/providers/github/status'),api('/v1/repositories'),api('/v1/venture/repositories'),api('/v1/hermes/state'),api('/v1/memory?project_code=STUDIO'),api('/v1/approvals'),api('/v1/account-connections')]);state.data=data;state.settings=settings;state.ollamaStatus=ollamaStatus;state.telegramStatus=telegramStatus;state.nousStatus=nousStatus;state.agentRingStatus=agentRingStatus;state.githubStatus=githubStatus;state.repositories=repositories;state.ventureRepositories=ventureRepositories.repositories||[];state.hermesState=hermesData;state.memoryEntries=memoryData.memories||[];state.approvals=approvalData.pending||[];state.accountConnections=accountData.accounts||[];renderRepositories();renderVentureRepositories();renderHermes();renderMemory();renderGithubStatus();renderApprovals();renderAccountConnections();renderOverview();loadProviderKeys().catch(()=>null);loadSecurityScope().catch(()=>null);loadTwilioStatus().catch(()=>null);loadFaceTimeStatus().catch(()=>null);loadCharacters().catch(()=>null);Promise.all([loadStatus(),loadElevenStatus(),loadFactoryData()]).catch(()=>null);}
 
 async function loadModels(force=false){try{const data=await api(`/v1/models${force?'?refresh=1':''}`);state.allModels=data.models;const providerFilter=$('#providerFilter');const providers=[...new Set(data.models.map(m=>m.provider))].sort();
 if(!providerFilter.options.length||providerFilter.dataset.all!=='1'){providerFilter.dataset.all='1';providerFilter.innerHTML='<option value="all">ALL PROVIDERS</option>'+providers.map(p=>`<option value="${esc(p)}">${esc(p.toUpperCase())}</option>`).join('');}
@@ -732,7 +795,7 @@ async function startElevenVoice(initialRequest=''){
   }catch(e){await stopLiveVoice();if(/daily limit|agent.*limit|reached/i.test(e.message)){toast('Live voice quota reached — switching to voice turn fallback');startVoiceTurn();}else toast(`Voice: ${e.message}`);}
 }
 
-installAudioControls();installClaudeControls();installHermesControls();installAgentFactory();installRepositoryRegistry();installGithubControls();installProviderKeyControls();installTwilioControls();installFaceTimeControls();installControlSurfaces();installPresenceLipSync();installChatPresence();installChatSessions();installNavigationIA();installCollapsibleWidgets();
+installAudioControls();installClaudeControls();installHermesControls();installAgentFactory();installRepositoryRegistry();installGithubControls();installProviderKeyControls();installTwilioControls();installFaceTimeControls();installCharacterControls();installControlSurfaces();installPresenceLipSync();installChatPresence();installChatSessions();installNavigationIA();installCollapsibleWidgets();
 $('#loginForm').addEventListener('submit',async(e)=>{e.preventDefault();try{await api('/v1/session',{method:'POST',body:JSON.stringify({token:$('#token').value})});$('#token').value='';await bootstrap();}catch(err){$('#loginError').textContent=err.message;}});
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>setView(b.dataset.view));for(const b of document.querySelectorAll('[data-jump]'))b.addEventListener('click',()=>setView(b.dataset.jump));$('#homeButton').addEventListener('click',()=>setView('overview'));$('#logout').addEventListener('click',async()=>{await api('/v1/session',{method:'DELETE'});showLogin();});
 $('#refreshAgents').addEventListener('click',loadData);$('#refreshProjects').addEventListener('click',loadData);$('#refreshMac').addEventListener('click',loadData);$('#refreshModels').addEventListener('click',()=>loadModels(true));$('#applyModel').addEventListener('click',async()=>{const[provider,...rest]=$('#modelSelect').value.split('::');try{await api('/v1/models/select',{method:'POST',body:JSON.stringify({provider,model:rest.join('::')})});toast('Model applied');await Promise.all([loadModels(),loadStatus()]);}catch(e){toast(e.message)}});
