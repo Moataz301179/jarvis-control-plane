@@ -796,3 +796,5 @@ body.jarvis-speaking .jarvis-chat-presence .jarvis-face-svg{filter:drop-shadow(0
 #statusConsole.attention{outline:1px solid #35ffa8;outline-offset:4px;border-radius:10px}
 .overview-controls .holo-button.active{border-color:#35ffa8!important;background:rgba(53,255,168,.14)!important;color:#c9ffe9!important;box-shadow:0 0 12px rgba(53,255,168,.35)}
 .mini-icon.active{border-color:#35ffa8!important;color:#bfffe8!important;box-shadow:0 0 12px rgba(53,255,168,.5);background:rgba(53,255,168,.12)!important}
+.skills-list .skill-row{align-items:flex-start}
+.skill-instructions{white-space:pre-wrap;max-height:360px;overflow:auto;margin:6px 0 10px;padding:10px;border:1px solid #2e1c3b;border-radius:6px;background:#0a0610;color:#c8b6d8;font:11px/1.5 "DM Mono",monospace}

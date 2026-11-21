@@ -380,6 +380,17 @@ function installHandsFreeControl(){
   updateHandsFreeButton();
   document.addEventListener('pointerdown',()=>{if(state.autoWake&&!state.wakeArmed&&!state.wakeStarting&&localStorage.getItem('jarvis_speak_replies_v2')==='0')armWakeWord(true);},{once:true});
 }
+
+async function loadSkills(q=''){
+  if(!$('#skillList'))return;
+  try{const data=await api('/v1/skills?q='+encodeURIComponent(q||$('#skillSearch')?.value||''));state.skills=data.skills||[];renderSkills();}
+  catch(error){const node=$('#skillMessage');if(node)node.textContent=error.message;}
+}
+function renderSkills(){
+  const list=$('#skillList');if(!list)return;const skills=state.skills||[];
+  const count=$('#skillsCount');if(count)count.textContent=`${skills.length} SKILLS`;
+  list.innerHTML=skills.length?skills.map((skill)=>`<div class="system-row skill-row"><div><strong>${esc(skill.name)}</strong><small>${esc(skill.category)} · ${esc(String(skill.source||'').replace('anthropics/skills','official'))} · ${skill.enabled?'ENABLED':'DISABLED'} · ${Number(skill.instruction_length)||0} chars</small></div><div class="button-row"><button class="holo-button" data-skill-view="${esc(skill.slug)}">VIEW</button><button class="holo-button" data-skill-toggle="${esc(skill.id)}" data-enabled="${Boolean(skill.enabled)}">${skill.enabled?'DISABLE':'ENABLE'}</button>${skill.source==='owner'?`<button class="holo-button" data-skill-delete="${esc(skill.id)}">DELETE</button>`:''}</div></div><pre class="skill-instructions" hidden></pre>`).join(''):'<div class="empty-state">No skills match.</div>';
+}
 function installPresenceLipSync(){
   const presence=document.getElementById('presenceAnimation');if(!presence||presence.querySelector('.jarvis-face-stack'))return;
   const stack=document.createElement('div');stack.className='jarvis-face-stack';stack.setAttribute('aria-hidden','true');
@@ -456,7 +467,9 @@ function installNavigationIA(){
   const macBtn=nav.querySelector('[data-view="mac"]');
   const settingsBtn=nav.querySelector('[data-view="settings"]');
   if(!$('#chatNav')&&overviewBtn){const chat=document.createElement('button');chat.id='chatNav';chat.className='nav-button';chat.type='button';chat.setAttribute('aria-label','Chat');chat.innerHTML='<span aria-hidden="true" style="width:16px;text-align:center">◍</span><span>Chat</span>';chat.addEventListener('click',()=>{setChatWorkspace(true);chat.classList.add('active');setTimeout(()=>chat.classList.remove('active'),700);});overviewBtn.insertAdjacentElement('afterend',chat);}
-  if(projectsBtn&&!$('#nav-memory')){const memory=navButton('memory','Memory','◈');memory.id='nav-memory';projectsBtn.insertAdjacentElement('afterend',memory);}
+  if(projectsBtn&&!$('#nav-skills')){const skills=navButton('skills','Skills','✦');skills.id='nav-skills';projectsBtn.insertAdjacentElement('afterend',skills);}
+  const skillsAnchor=$('#nav-skills')||projectsBtn;
+  if(skillsAnchor&&!$('#nav-memory')){const memory=navButton('memory','Memory','◈');memory.id='nav-memory';skillsAnchor.insertAdjacentElement('afterend',memory);}
   if(macBtn&&!$('#nav-security')){const security=navButton('security','Security','⛨');security.id='nav-security';macBtn.insertAdjacentElement('afterend',security);}
   if(overviewBtn&&!nav.querySelector('.nav-group-label[data-group="operate"]'))overviewBtn.insertAdjacentElement('beforebegin',groupLabel('OPERATE','operate'));
   if(macBtn&&!nav.querySelector('.nav-group-label[data-group="control"]'))macBtn.insertAdjacentElement('beforebegin',groupLabel('CONTROL','control'));
@@ -472,6 +485,25 @@ function installNavigationIA(){
   const githubPanel=$('#githubForm')?.closest('article');if(githubPanel&&githubPanel.parentElement!==securityView)securityView.appendChild(githubPanel);
   if(!$('#securityScopePanel')){const panel=document.createElement('article');panel.id='securityScopePanel';panel.className='panel';panel.innerHTML='<div class="panel-head"><div><span class="micro">LINUX RECON SCOPE</span><h3>Authorized targets and tools</h3></div><span id="securityScopeState" class="status">CHECKING</span></div><p class="muted">The local model can run nmap, dig, whois, traceroute and curl on the VPS. Private and loopback targets are always allowed; every other target must be listed in the scope file.</p><div id="securityScope" class="stack"></div>';securityView.appendChild(panel);}
 
+  const skillsView=addView('skills','PLAYBOOKS · TOOLS · EXECUTION','Skills','refreshSkills');
+  if(!$('#skillsPanel')){
+    const panel=document.createElement('article');panel.className='panel';panel.id='skillsPanel';
+    panel.innerHTML='<div class="panel-head"><div><span class="micro">SKILL LIBRARY</span><h3>Playbooks JARVIS can load</h3></div><span id="skillsCount" class="pill">0</span></div><p class="muted">Skills are instructions the model loads on demand, then executes with its tools. Official skills imported from anthropics/skills; VoltAgent/awesome-claude-skills is the 1,497-skill index for more.</p><form id="skillSearchForm" class="form-grid"><label class="wide">SEARCH SKILLS<input id="skillSearch" placeholder="research, scrape, email, audit, design…"></label><div class="form-actions"><button class="holo-button" type="submit">SEARCH</button></div></form><div id="skillList" class="stack skills-list"></div><form id="skillForm" class="form-grid" style="margin-top:16px"><h4 class="wide">ADD A SKILL</h4><label>NAME<input id="skillName" required maxlength="160"></label><label>CATEGORY<input id="skillCategory" value="general" maxlength="60"></label><label class="wide">DESCRIPTION<input id="skillDescription" maxlength="1000" placeholder="When should JARVIS use this?"></label><label class="wide">INSTRUCTIONS<textarea id="skillInstructions" rows="6" required placeholder="Step-by-step playbook. Reference the available tools."></textarea></label><div class="form-actions"><button class="holo-button primary" type="submit">SAVE SKILL</button></div></form><p id="skillMessage" class="status-message"></p>';
+    skillsView.appendChild(panel);
+    $('#skillSearchForm').addEventListener('submit',(event)=>{event.preventDefault();loadSkills($('#skillSearch').value);});
+    $('#skillForm').addEventListener('submit',async(event)=>{event.preventDefault();try{await api('/v1/skills',{method:'POST',body:JSON.stringify({name:$('#skillName').value.trim(),category:$('#skillCategory').value.trim()||'general',description:$('#skillDescription').value.trim(),instructions:$('#skillInstructions').value.trim()})});$('#skillName').value='';$('#skillDescription').value='';$('#skillInstructions').value='';$('#skillMessage').textContent='Skill saved';await loadSkills();}catch(error){$('#skillMessage').textContent=error.message;}});
+    $('#skillList').addEventListener('click',async(event)=>{
+      const view=event.target.closest('[data-skill-view]');
+      const toggle=event.target.closest('[data-skill-toggle]');
+      const remove=event.target.closest('[data-skill-delete]');
+      try{
+        if(view){const row=view.closest('.skill-row');const pre=row?.nextElementSibling;if(!pre)return;if(!pre.hidden){pre.hidden=true;return;}const skill=await api('/v1/skills/'+encodeURIComponent(view.dataset.skillView));pre.textContent=skill.instructions;pre.hidden=false;}
+        else if(toggle){await api('/v1/skills/'+encodeURIComponent(toggle.dataset.skillToggle),{method:'PATCH',body:JSON.stringify({enabled:toggle.dataset.enabled!=='true'})});await loadSkills();}
+        else if(remove){await api('/v1/skills/'+encodeURIComponent(remove.dataset.skillDelete),{method:'DELETE'});await loadSkills();}
+      }catch(error){$('#skillMessage').textContent=error.message;}
+    });
+    $('#refreshSkills')?.addEventListener('click',()=>loadSkills());
+  }
   const settings=$('#view-settings');const elevenPanel=$('#elevenForm')?.closest('article');if(elevenPanel&&settings&&elevenPanel.parentElement!==settings)settings.appendChild(elevenPanel);
   const projects=$('#view-projects');const repoPanel=$('#repositoryForm')?.closest('article');if(repoPanel&&projects){const grid=$('#projectGrid');projects.insertBefore(repoPanel,grid);}
 
@@ -542,8 +574,8 @@ function renderAccountConnections(){
   const node=$('#accountConnectionList');if(!node)return;const accounts=state.accountConnections||[];const verified=accounts.filter(a=>a.status==='verified').length;$('#accountConnectionCount').textContent=`${verified} VERIFIED`;
   node.innerHTML=accounts.length?accounts.map(account=>`<div class="system-row"><div><strong>${esc(account.service)} · ${esc(account.account_alias)}</strong><small>${esc(account.project_code)} · ${esc(account.status)} · expires ${formatTime(account.expires_at)}</small></div><div class="button-row">${['opened','awaiting_verification','failed'].includes(account.status)?`<button class="holo-button primary" data-account-verify="${esc(account.id)}">VERIFY LOGIN</button>`:statusBadge(account.status)}</div></div>`).join(''):'<div class="empty-state">No account connections yet. Ask JARVIS in chat to connect an account.</div>';
 }
-const titles = { overview: 'OVERVIEW', agents: 'AGENTS', projects: 'PROJECTS', mac: 'MAC CONTROL', settings: 'SETTINGS', memory: 'MEMORY', security: 'SECURITY' };
-function setView(view) { for (const b of document.querySelectorAll('[data-view]')) b.classList.toggle('active', b.dataset.view === view); for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.id === `view-${view}`); $('#pageTitle').textContent = titles[view]; if (view === 'security') loadSecurityScope(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+const titles = { overview: 'OVERVIEW', agents: 'AGENTS', projects: 'PROJECTS', mac: 'MAC CONTROL', settings: 'SETTINGS', memory: 'MEMORY', security: 'SECURITY', skills: 'SKILLS' };
+function setView(view) { for (const b of document.querySelectorAll('[data-view]')) b.classList.toggle('active', b.dataset.view === view); for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.id === `view-${view}`); $('#pageTitle').textContent = titles[view]; if (view === 'security') loadSecurityScope(); if (view === 'skills') loadSkills(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
 
 function renderStatus() {
   if (!state.status) return;
