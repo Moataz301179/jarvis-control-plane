@@ -33,7 +33,7 @@ const token = process.env.JARVIS_MAC_BRIDGE_TOKEN;
 const baseUrl = process.env.JARVIS_BASE_URL || 'http://127.0.0.1:13100';
 if (!token) throw new Error('JARVIS_MAC_BRIDGE_TOKEN is required');
 
-const capabilities = ['open_terminal','list_files','disk_inventory','create_folder','arrange_photos','move_files','clean_temp_files','trash_file','cursor_status','cursor_open','cursor_agent','codex_agent','claude_agent','remote_desktop_device','browser_profile_login','browser_profile_probe'];
+const capabilities = ['open_terminal','list_files','disk_inventory','create_folder','arrange_photos','move_files','clean_temp_files','trash_file','cursor_status','cursor_open','cursor_agent','codex_agent','claude_agent','openjarvis_ask','terminal_command','remote_desktop_device','browser_profile_login','browser_profile_probe'];
 let stopping = false;
 
 function withinHome(target) {
