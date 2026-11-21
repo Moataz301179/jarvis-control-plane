@@ -210,6 +210,18 @@ function jarvisFaceMarkup(){
     <path d="M170 288 C180 276 192 280 200 286 C208 280 220 276 230 288" fill="none" stroke="#f0b7cc" stroke-opacity=".35" stroke-width="1"/>
     <!-- jaw/chin -->
     <path d="M168 312 C180 322 220 322 232 312" fill="none" stroke="#35ffa8" stroke-opacity=".25" stroke-width="1.4"/>
+    <g fill="none" stroke-linecap="round">
+      <path d="M112 190 C104 250 108 300 124 340" stroke="#a66bff" stroke-opacity=".45" stroke-width="2"/>
+      <path d="M288 190 C296 250 292 300 276 340" stroke="#a66bff" stroke-opacity=".45" stroke-width="2"/>
+      <path d="M150 100 C132 140 128 180 130 210" stroke="#ff5fa2" stroke-opacity=".22" stroke-width="1.5"/>
+      <path d="M250 100 C268 140 272 180 270 210" stroke="#ff5fa2" stroke-opacity=".22" stroke-width="1.5"/>
+    </g>
+    <path d="M146 218 C154 240 164 254 176 264" stroke="#f0e6ff" stroke-opacity=".16" stroke-width="10" fill="none" filter="url(#jf-smoke)"/>
+    <path d="M254 218 C246 240 236 254 224 264" stroke="#f0e6ff" stroke-opacity=".16" stroke-width="10" fill="none" filter="url(#jf-smoke)"/>
+    <path d="M200 206 L200 242" stroke="#f0e6ff" stroke-opacity=".20" stroke-width="2" fill="none"/>
+    <path d="M188 296 C194 300 206 300 212 296" stroke="#ffd9e6" stroke-opacity=".45" stroke-width="1.2" fill="none"/>
+    <path d="M150 400 C170 384 230 384 250 400" stroke="#35ffa8" stroke-opacity=".22" fill="none"/>
+    <path d="M200 386 L200 456" stroke="#a66bff" stroke-opacity=".18"/>
     <!-- scanline -->
     <rect class="jf-scan" x="124" y="92" width="152" height="5" fill="#35ffa8" opacity=".07"/>
   </g>
