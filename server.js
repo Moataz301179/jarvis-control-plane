@@ -1246,6 +1246,25 @@ async function deleteCharacter(id) {
   return listCharacters();
 }
 
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return `scrypt:${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  const [scheme, salt, hash] = String(stored || '').split(':');
+  if (scheme !== 'scrypt' || !salt || !hash) return false;
+  const candidate = crypto.scryptSync(String(password), salt, 64);
+  const expected = Buffer.from(hash, 'hex');
+  return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
+}
+
+async function storedPasswordHash() {
+  const row = (await query("SELECT value FROM runtime_settings WHERE key='auth.password_hash'")).rows[0];
+  return row?.value || null;
+}
+
 async function getRuntimeSettings() {
   const rows = await query('SELECT key,value FROM runtime_settings');
   const values = Object.fromEntries(rows.rows.map((row) => [row.key, row.value]));
@@ -3090,9 +3109,18 @@ async function handle(req, res) {
   }
   if (req.method === 'POST' && url.pathname === '/v1/session') {
     const body = await readJson(req);
-    if (!requireOwner({ headers: { authorization: `Bearer ${body.token || ''}` } })) throw Object.assign(new Error('invalid owner token'), { statusCode: 401 });
-    res.setHeader('set-cookie', sessionCookie(req, issueSession()));
-    return sendJson(res, 200, { ok: true });
+    const submitted = String(body.password || body.token || '');
+    let authorized = false;
+    if (submitted) {
+      const passwordHash = await storedPasswordHash();
+      if (passwordHash && verifyPassword(submitted, passwordHash)) authorized = true;
+      else if (requireOwner({ headers: { authorization: `Bearer ${submitted}` } })) authorized = true;
+    }
+    if (!authorized) throw Object.assign(new Error('Invalid password'), { statusCode: 401 });
+    const remember = body.remember !== false;
+    const ttl = remember ? 365 * 24 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000;
+    res.setHeader('set-cookie', sessionCookie(req, issueSession(ttl), Math.floor(ttl / 1000)));
+    return sendJson(res, 200, { ok: true, remember });
   }
   if (req.method === 'DELETE' && url.pathname === '/v1/session') {
     res.setHeader('set-cookie', sessionCookie(req, '', 0));
@@ -3226,6 +3254,19 @@ async function handle(req, res) {
   const characterMatch = url.pathname.match(/^\/v1\/characters\/([0-9a-f-]{36})$/);
   if (req.method === 'PATCH' && characterMatch) { await requirePermission(req, 'provider:write'); req.body = (await readJson(req)) || {}; return sendJson(res, 200, await updateCharacter(characterMatch[1], req.body)); }
   if (req.method === 'DELETE' && characterMatch) { await requirePermission(req, 'provider:write'); return sendJson(res, 200, await deleteCharacter(characterMatch[1])); }
+  if (req.method === 'POST' && url.pathname === '/v1/auth/password') {
+    await requirePermission(req, 'provider:write');
+    req.body = (await readJson(req)) || {};
+    const password = String(req.body.password || '');
+    if (password.length < 10 || password.length > 200) throw Object.assign(new Error('Password must be between 10 and 200 characters'), { statusCode: 400 });
+    await query("INSERT INTO runtime_settings (key,value,updated_at) VALUES ('auth.password_hash',$1,now()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()", [JSON.stringify(hashPassword(password))]);
+    await query('INSERT INTO audit_events (actor,action,entity_type,entity_id,detail) VALUES ($1,$2,$3,$4,$5)', ['owner', 'auth.password_set', 'runtime_setting', 'auth.password_hash', {}]).catch(() => null);
+    return sendJson(res, 200, { configured: true });
+  }
+  if (req.method === 'GET' && url.pathname === '/v1/auth/password/status') {
+    await requirePermission(req, 'read');
+    return sendJson(res, 200, { configured: Boolean(await storedPasswordHash()) });
+  }
   if (req.method === 'GET' && url.pathname === '/v1/settings') return sendJson(res, 200, await settingsState());
   if (req.method === 'PATCH' && url.pathname === '/v1/settings') { await requirePermission(req, 'provider:write'); req.body = await readJson(req); return sendJson(res, 200, await updateRuntimeSettings(req.body)); }
   if (req.method === 'GET' && url.pathname === '/v1/access') return sendJson(res, 200, await accessState());

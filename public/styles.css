@@ -759,3 +759,5 @@ body.jarvis-speaking .jarvis-chat-presence .jarvis-face-svg{filter:drop-shadow(0
 .photo-mouth-open{display:block;width:100%;height:100%;border-radius:50%;background:radial-gradient(ellipse at 50% 50%, rgba(255,140,185,.9), rgba(150,25,70,.7) 45%, rgba(20,4,10,0) 76%);filter:blur(1px);opacity:calc(.12 + var(--mouth,0)*.78);transform:scaleY(calc(.22 + var(--mouth,0)*.78))}
 .photo-scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg, rgba(53,255,168,.05) 0 1px, transparent 1px 4px);mix-blend-mode:screen;animation:jf-scan 4s linear infinite;pointer-events:none}
 .jarvis-chat-presence .photo-face{position:absolute;left:50%;top:50%;width:min(88%,390px);aspect-ratio:1;transform:translate(-50%,-50%)}
+.login-remember{display:flex;align-items:center;gap:8px;margin-top:10px;color:#9e87ad;font-family:"DM Mono",monospace;font-size:8px;letter-spacing:.06em;text-transform:uppercase}
+.login-remember input{width:auto;min-height:0;accent-color:#b55dff}
