@@ -467,7 +467,7 @@ function enforceAuthRateLimit(req) {
   const key = authClientKey(req);
   const now = Date.now();
   const bucket = authFailureBuckets.get(key);
-  if (bucket && bucket.resetAt > now && bucket.count >= 10) {
+  if (bucket && bucket.resetAt > now && bucket.count >= 20) {
     const retry = Math.ceil((bucket.resetAt - now) / 1000);
     throw Object.assign(new Error(`Too many authentication failures. Retry in ${retry} seconds.`), { statusCode: 429, retryAfter: retry });
   }
@@ -3229,7 +3229,7 @@ async function handle(req, res) {
     req.body = await readJson(req);
     return sendJson(res, 200, await completeMacJob(macResultMatch[1], req.body));
   }
-  enforceAuthRateLimit(req);
+  if (!requireSession(req)) enforceAuthRateLimit(req);
   try {
     await authenticateRequest(req);
     authFailureBuckets.delete(authClientKey(req));
