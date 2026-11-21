@@ -3048,14 +3048,15 @@ async function resolveStudioAlert(id) {
 async function serveStatic(pathname, res) {
   const files = { '/': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/manifest.webmanifest': 'manifest.webmanifest', '/assets/jarvis-icon.svg': 'assets/jarvis-icon.svg', '/assets/owner-selected-background.jpg': 'assets/owner-selected-background.jpg', '/assets/jarvis-hologram-face.png': 'assets/jarvis-hologram-face.png', '/assets/jarvis-hologram-face-speaking.png': 'assets/jarvis-hologram-face-speaking.png' };
   let name = files[pathname];
+  if (!name && /^\/assets\/[A-Za-z0-9._-]+$/.test(pathname)) name = pathname.slice(1);
   if (!name && pathname.startsWith('/vendor/')) {
     const relative = path.normalize(pathname.slice('/vendor/'.length));
     if (!relative.startsWith('..') && relative.endsWith('.js')) name = `vendor/${relative}`;
   }
   if (!name) return false;
   const data = await fs.readFile(path.join(publicDir, name));
-  const type = name.endsWith('.css') ? 'text/css; charset=utf-8' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.png') ? 'image/png' : name.endsWith('.svg') ? 'image/svg+xml' : name.endsWith('.webmanifest') ? 'application/manifest+json' : name.endsWith('.json') ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8';
-    res.writeHead(200, { 'content-type': type, 'content-length': data.length, 'cache-control': /\.(?:jpg|png)$/.test(name) ? 'public, max-age=3600' : 'no-cache', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'permissions-policy': 'camera=(), geolocation=(), payment=(), usb=()', 'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self' blob:; connect-src 'self' https://api.elevenlabs.io wss://api.elevenlabs.io https://cdn.jsdelivr.net; img-src 'self' data:; frame-ancestors 'none'" });
+  const type = name.endsWith('.css') ? 'text/css; charset=utf-8' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.png') ? 'image/png' : name.endsWith('.svg') ? 'image/svg+xml' : name.endsWith('.webp') ? 'image/webp' : name.endsWith('.webmanifest') ? 'application/manifest+json' : name.endsWith('.json') ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8';
+    res.writeHead(200, { 'content-type': type, 'content-length': data.length, 'cache-control': /\.(?:jpg|png|svg|webp)$/.test(name) ? 'public, max-age=3600' : 'no-cache', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'permissions-policy': 'camera=(), geolocation=(), payment=(), usb=()', 'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self' blob:; connect-src 'self' https://api.elevenlabs.io wss://api.elevenlabs.io https://cdn.jsdelivr.net; img-src 'self' data:; frame-ancestors 'none'" });
   res.end(data);
   return true;
 }
