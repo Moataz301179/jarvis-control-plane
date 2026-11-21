@@ -320,11 +320,41 @@ function toggleHandsFree(){
   } else { stopWakeWord(); toast('Hands-free off'); }
 }
 
+
+function updateOverviewControls(){
+  const bar=$('#overviewControls');if(!bar)return;
+  const voice=bar.querySelector('[data-control="voice"]');if(voice)voice.textContent=localStorage.getItem('jarvis_speak_replies_v2')!=='0'?'VOICE ON':'VOICE OFF';
+  const hands=bar.querySelector('[data-control="hands-free"]');if(hands)hands.textContent=state.autoWake?'HANDS-FREE ON':'HANDS-FREE OFF';
+}
+function toggleSpeakReplies(){
+  const on=localStorage.getItem('jarvis_speak_replies_v2')!=='0';
+  localStorage.setItem('jarvis_speak_replies_v2',on?'0':'1');
+  updateSpeakToggle();updateOverviewControls();
+  if(!on){ensureAudioContext();speak('Voice on, Boss.');}else{stopMouthAnimation();}
+}
+function installOverviewControls(){
+  const overview=$('#view-overview'),metrics=$('#overviewMetrics');if(!overview||!metrics||$('#overviewControls'))return;
+  const bar=document.createElement('div');bar.id='overviewControls';bar.className='overview-controls';
+  bar.innerHTML='<button class="holo-button primary" type="button" data-control="talk">TALK</button><button class="holo-button" type="button" data-control="new-chat">NEW CHAT</button><button class="holo-button" type="button" data-control="voice">VOICE ON</button><button class="holo-button" type="button" data-control="hands-free">HANDS-FREE</button><button class="holo-button" type="button" data-control="approvals">APPROVALS</button>';
+  overview.insertBefore(bar,metrics);
+  bar.addEventListener('click',(event)=>{
+    const button=event.target.closest('button[data-control]');if(!button)return;
+    const control=button.dataset.control;
+    if(control==='talk'){setChatWorkspace(true);startVoiceTurn();}
+    else if(control==='new-chat'){startNewChat();setChatWorkspace(true);}
+    else if(control==='voice'){toggleSpeakReplies();}
+    else if(control==='hands-free'){toggleHandsFree();updateOverviewControls();}
+    else if(control==='approvals'){document.querySelector('#approvalInboxPanel')?.scrollIntoView({behavior:'smooth',block:'center'});document.querySelector('#statusConsole')?.classList.add('attention');setTimeout(()=>document.querySelector('#statusConsole')?.classList.remove('attention'),1500);}
+  });
+  metrics.addEventListener('click',(event)=>{const card=event.target.closest('[data-overview-jump]');if(card)setView(card.dataset.overviewJump);});
+  document.querySelectorAll('#statusConsole .system-row').forEach((row)=>{row.style.cursor='pointer';row.title='Open details';row.addEventListener('click',()=>{setView(/mac/i.test(row.textContent)?'mac':'settings');});});
+  updateOverviewControls();
+}
 function updateSpeakToggle(){const b=$('#speakToggle');if(!b)return;const on=localStorage.getItem('jarvis_speak_replies_v2')!=='0';b.textContent=on?'🔊':'🔇';b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));b.title=on?'Spoken replies ON':'Spoken replies OFF — tap to enable';}
 function installSpeakToggle(){
   const actions=document.querySelector('#chatConsole .mini-chat-actions');if(!actions||$('#speakToggle'))return;
   const button=document.createElement('button');button.id='speakToggle';button.className='mini-icon';button.type='button';button.setAttribute('aria-label','Toggle spoken replies');
-  button.addEventListener('click',()=>{const on=localStorage.getItem('jarvis_speak_replies_v2')!=='0';localStorage.setItem('jarvis_speak_replies_v2',on?'0':'1');updateSpeakToggle();if(!on){ensureAudioContext();speak('Voice on, Boss.');}else{stopMouthAnimation();}});
+  button.addEventListener('click',toggleSpeakReplies);
   actions.insertBefore(button,actions.firstChild);updateSpeakToggle();
 }
 let greetingScheduled=false;
@@ -536,7 +566,7 @@ function renderOverview() {
   $('#agentNavCount').textContent = state.data.agents.length;
   $('#projectNavCount').textContent = state.data.projects.length;
   $('#macNavState').textContent = state.data.macBridge.status === 'online' ? 'ON' : 'OFF';
-  $('#overviewMetrics').innerHTML = [['Agents', state.data.agents.length, `${activeRuns.length} active runs`], ['Projects', state.data.projects.length, 'Managed portfolio'], ['Blocked runs', state.data.runs.filter((run) => run.status === 'blocked').length, 'Needs intervention'], ['Mac bridge', state.data.macBridge.status, state.data.macBridge.hostname || 'Local computer']].map(([label,value,detail]) => `<div class="metric-card"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></div>`).join('');
+  $('#overviewMetrics').innerHTML = [['Agents', state.data.agents.length, `${activeRuns.length} active runs`, 'agents'], ['Projects', state.data.projects.length, 'Open portfolio', 'projects'], ['Blocked runs', state.data.runs.filter((run) => run.status === 'blocked').length, 'Open agents', 'agents'], ['Mac bridge', state.data.macBridge.status, 'Open Mac control', 'mac']].map(([label,value,detail,jump]) => `<button class="metric-card" type="button" data-overview-jump="${jump}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)} →</small></button>`).join('');
   renderUsage();
   $('#overviewRuns').innerHTML = activeRuns.length ? activeRuns.slice(0,6).map((run)=>{const agent=state.data.agents.find(a=>a.id===run.agent_id);return `<div class="compact-row"><div><strong>${esc(agent?.name || run.agent_id)} · ${esc(run.objective)}</strong><small>${esc(run.project_code || 'No project')} · ${run.progress}%</small></div>${statusBadge(run.status)}</div>`}).join('') : '<div class="empty-state">No active agent runs.</div>';
   $('#overviewProjects').innerHTML = state.data.projects.map((p)=>`<div class="compact-row"><div><strong>${esc(p.name)}</strong><small>${p.progress}% · ${esc(p.control?.manager || 'Unassigned')} · ${esc(p.control?.next_step || 'Next step not set')}</small></div>${statusBadge(p.status)}</div>`).join('');
@@ -867,7 +897,7 @@ async function startElevenVoice(initialRequest=''){
   }catch(e){await stopLiveVoice();if(/daily limit|agent.*limit|reached/i.test(e.message)){toast('Live voice quota reached — switching to voice turn fallback');startVoiceTurn();}else toast(`Voice: ${e.message}`);}
 }
 
-installAudioControls();installClaudeControls();installHermesControls();installAgentFactory();installRepositoryRegistry();installGithubControls();installProviderKeyControls();installTwilioControls();installFaceTimeControls();installCharacterControls();installPasswordControls();installControlSurfaces();installPresenceLipSync();installChatPresence();installChatSessions();installSpeakToggle();installHandsFreeControl();installNavigationIA();installCollapsibleWidgets();
+installAudioControls();installClaudeControls();installHermesControls();installAgentFactory();installRepositoryRegistry();installGithubControls();installProviderKeyControls();installTwilioControls();installFaceTimeControls();installCharacterControls();installPasswordControls();installControlSurfaces();installPresenceLipSync();installChatPresence();installChatSessions();installSpeakToggle();installHandsFreeControl();installNavigationIA();installOverviewControls();installCollapsibleWidgets();
 $('#loginForm').addEventListener('submit',async(e)=>{e.preventDefault();try{const response=await fetch('/v1/session',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({password:$('#token').value,remember:$('#rememberDevice')?.checked!==false})});const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.error||`Login failed (${response.status})`);$('#token').value='';await bootstrap();}catch(err){$('#loginError').textContent=err.message;}});
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>setView(b.dataset.view));for(const b of document.querySelectorAll('[data-jump]'))b.addEventListener('click',()=>setView(b.dataset.jump));$('#homeButton').addEventListener('click',()=>setView('overview'));$('#logout').addEventListener('click',async()=>{await api('/v1/session',{method:'DELETE'});showLogin();});
 $('#refreshAgents').addEventListener('click',loadData);$('#refreshProjects').addEventListener('click',loadData);$('#refreshMac').addEventListener('click',loadData);$('#refreshModels').addEventListener('click',()=>loadModels(true));$('#applyModel').addEventListener('click',async()=>{const[provider,...rest]=$('#modelSelect').value.split('::');try{await api('/v1/models/select',{method:'POST',body:JSON.stringify({provider,model:rest.join('::')})});toast('Model applied');await Promise.all([loadModels(),loadStatus()]);}catch(e){toast(e.message)}});

@@ -784,3 +784,13 @@ body.jarvis-speaking .jarvis-chat-presence .jarvis-face-svg{filter:drop-shadow(0
   pointer-events:none;
 }
 .mini-icon.active{border-color:#35ffa8!important;color:#bfffe8!important;box-shadow:0 0 10px rgba(53,255,168,.4)}
+/* Overview: actionable widgets, no decorative duplicates */
+.overview-controls{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px}
+.overview-controls .holo-button{flex:0 0 auto;min-width:104px}
+.metric-card{appearance:none;cursor:pointer;text-align:left;font:inherit;color:inherit;transition:border-color .18s ease, transform .18s ease}
+.metric-card:hover{border-color:#8b5cf6;transform:translateY(-1px)}
+.metric-card:focus-visible{outline:2px solid #35ffa8;outline-offset:2px}
+#view-overview > .grid-2{display:none!important}
+#view-overview .hero-metrics{display:none!important}
+#statusConsole .system-row:hover{border-color:#4b2a63}
+#statusConsole.attention{outline:1px solid #35ffa8;outline-offset:4px;border-radius:10px}
