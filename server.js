@@ -3065,8 +3065,9 @@ async function handle(req, res) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       return res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width"><title>JARVIS login</title></head><body style="font:16px system-ui;background:#09050e;color:#eadcf3;padding:40px"><h1>JARVIS login link</h1><p>Open this message in your browser and tap the link.</p></body></html>');
     }
-    const consumed = ticket ? await query('UPDATE login_tickets SET used_at=now() WHERE token_hash=$1 AND expires_at>now() AND used_at IS NULL RETURNING id', [hashToken(ticket)]) : { rows: [] };
-    if (!consumed.rows.length) throw Object.assign(new Error('login ticket is invalid or expired'), { statusCode: 401 });
+    const ticketRow = ticket ? await query('SELECT id FROM login_tickets WHERE token_hash=$1 AND expires_at>now() ORDER BY created_at DESC LIMIT 1', [hashToken(ticket)]) : { rows: [] };
+    if (!ticketRow.rows.length) throw Object.assign(new Error('login ticket is invalid or expired'), { statusCode: 401 });
+    await query('UPDATE login_tickets SET used_at=COALESCE(used_at,now()) WHERE id=$1', [ticketRow.rows[0].id]).catch(() => null);
     const remember = url.searchParams.get('remember') === '1';
     const sessionTtl = remember ? 365 * 24 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000;
     res.writeHead(302, { location: '/', 'set-cookie': sessionCookie(req, issueSession(sessionTtl), Math.floor(sessionTtl / 1000)), 'cache-control': 'no-store' });
