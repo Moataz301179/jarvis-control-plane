@@ -438,7 +438,7 @@ jarvisToolDefinitions.push({type:'function',function:{name:'get_mac_job',descrip
 jarvisToolDefinitions.push({type:'function',function:{name:'scan_mac_network',description:'Scan the private local network from the owner Mac and return discovered hosts. Private RFC1918 networks only.',parameters:{type:'object',properties:{subnet:{type:'string'}}}}});
 jarvisToolDefinitions.push({type:'function',function:{name:'organize_mac_folder',description:'Sort the files in a Mac folder into subfolders by type or by month. Moves files only; never deletes.',parameters:{type:'object',properties:{path:{type:'string'},mode:{type:'string',enum:['type','date']}},required:['path']}}});
 jarvisToolDefinitions.push({type:'function',function:{name:'delete_old_mac_files',description:'Move files older than N days from a Mac folder to Trash. Requires owner approval. Use dry_run first to preview.',parameters:{type:'object',properties:{path:{type:'string'},days:{type:'integer'},dry_run:{type:'boolean'}},required:['path']}}});
-jarvisToolDefinitions.push({type:'function',function:{name:'facetime_call',description:'Call the owner on FaceTime from the Mac, audio or video. Uses the saved default target unless one is provided.',parameters:{type:'object',properties:{target:{type:'string'},kind:{type:'string',enum:['audio','video']}}}}});
+jarvisToolDefinitions.push({type:'function',function:{name:'facetime_call',description:'Call the owner on FaceTime from the Mac, audio or video. Uses the saved default target unless one is provided.',parameters:{type:'object',properties:{target:{type:'string'},kind:{type:'string',enum:['audio','video','cellular']}}}}});
 jarvisToolDefinitions.push({type:'function',function:{name:'linux_tool',description:'Run an allowlisted Linux reconnaissance tool on the VPS (nmap, dig, whois, traceroute, curl) against an authorized target. Targets must be private/loopback or listed in the security scope file.',parameters:{type:'object',properties:{tool:{type:'string',enum:['nmap','dig','whois','traceroute','curl']},target:{type:'string'},options:{type:'array',items:{type:'string'}}},required:['tool','target']}}});
 
 function error(res, err) {
@@ -928,7 +928,7 @@ async function faceTimeSettings() {
   if (!row) return { configured: false, kind: 'video', target: null, target_masked: null };
   try {
     const target = decryptSecret(row.encrypted_key);
-    return { configured: true, kind: row.metadata?.kind === 'audio' ? 'audio' : 'video', target, target_masked: maskFaceTimeTarget(target) };
+    return { configured: true, kind: ['audio','cellular'].includes(row.metadata?.kind) ? row.metadata.kind : 'video', target, target_masked: maskFaceTimeTarget(target) };
   } catch {
     return { configured: false, kind: 'video', target: null, target_masked: null };
   }
@@ -941,7 +941,7 @@ async function publicFaceTimeStatus() {
 
 async function saveFaceTimeSettings(body) {
   const { target } = normalizeFaceTimeTarget(body.target);
-  const kind = body.kind === 'audio' ? 'audio' : 'video';
+  const kind = ['audio','cellular'].includes(body.kind) ? body.kind : 'video';
   await query("INSERT INTO provider_credentials (provider,encrypted_key,agent_id,metadata,updated_at) VALUES ('facetime',$1,NULL,$2,now()) ON CONFLICT (provider) DO UPDATE SET encrypted_key=EXCLUDED.encrypted_key,metadata=EXCLUDED.metadata,updated_at=now()", [encryptSecret(target), JSON.stringify({ kind, configured_by: 'owner' })]);
   return publicFaceTimeStatus();
 }
@@ -1657,7 +1657,7 @@ async function executeJarvisTool(name, input = {}) {
       const source = String(input.target || '').trim() || settings.target;
       if (!source) return { ok: false, tool: name, duration_ms: Date.now() - started, error: 'Save a FaceTime target in Settings → FaceTime calls first.' };
       const { target } = normalizeFaceTimeTarget(source);
-      const kind = input.kind === 'audio' ? 'audio' : input.kind === 'video' ? 'video' : settings.kind;
+      const kind = ['audio','cellular','video'].includes(input.kind) ? input.kind : settings.kind;
       const job = await createMacJob({ action: 'facetime_call', params: { target, kind, project_code: input.project_code || 'STUDIO' }, requested_by: 'owner' });
       const settled = await waitForMacJob(job.id, 45000);
       return { ok: settled?.status === 'succeeded', tool: name, duration_ms: Date.now() - started, result: { id: job.id, status: settled?.status || 'pending', kind, target_masked: maskFaceTimeTarget(target), error: settled?.error || null } };
@@ -3243,10 +3243,10 @@ async function handle(req, res) {
     const source = String(req.body.target || '').trim() || settings.target;
     if (!source) throw Object.assign(new Error('Save a FaceTime target first, or provide one in the request'), { statusCode: 400 });
     const { target } = normalizeFaceTimeTarget(source);
-    const kind = req.body.kind === 'audio' ? 'audio' : settings.kind || 'video';
+    const kind = ['audio','cellular'].includes(req.body.kind) ? req.body.kind : settings.kind || 'video';
     const job = await createMacJob({ action: 'facetime_call', params: { target, kind, project_code: 'STUDIO' }, requested_by: 'owner' });
     const settled = await waitForMacJob(job.id, 45000);
-    return sendJson(res, 200, { job_id: job.id, status: settled?.status || 'pending', kind, target_masked: maskFaceTimeTarget(target), error: settled?.error || null });
+    return sendJson(res, 200, { job_id: job.id, status: settled?.status || 'pending', kind, handler: settled?.result?.handler || null, target_masked: maskFaceTimeTarget(target), error: settled?.error || null });
   }
   if (req.method === 'GET' && url.pathname === '/v1/providers/twilio/status') return sendJson(res, 200, await twilioStatus());
   if (req.method === 'POST' && url.pathname === '/v1/providers/twilio') { await requirePermission(req, 'provider:write'); req.body = await readJson(req); return sendJson(res, 200, await saveTwilioCredentials(req.body)); }

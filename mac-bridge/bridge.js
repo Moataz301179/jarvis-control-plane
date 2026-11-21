@@ -406,11 +406,12 @@ async function faceTimeCall(params) {
   const digits = raw.replace(/[^\d+]/g, '');
   if (!email && !/^\+[1-9]\d{7,14}$/.test(digits)) throw new Error('Use an Apple ID email or an international phone number such as +201234567890');
   const target = email ? raw : digits;
-  const kind = params.kind === 'audio' ? 'audio' : 'video';
-  const scheme = kind === 'audio' ? 'facetime-audio' : 'facetime';
+  const kind = ['audio','cellular'].includes(params.kind) ? params.kind : 'video';
+  const scheme = kind === 'audio' ? 'facetime-audio' : kind === 'cellular' ? 'tel' : 'facetime';
   await execFileAsync('/usr/bin/open', [`${scheme}://${target}`], { timeout: 15000 });
   const masked = email ? target.replace(/^(.).*(@.*)$/, '$1•••$2') : target.replace(/^(\+?\d{2}).*(\d{3})$/, '$1•••$2');
-  return { opened: true, kind, target_masked: masked };
+  const handler = kind === 'video' ? 'FaceTime' : kind === 'audio' ? 'Phone app (Continuity)' : 'Phone app (cellular)';
+  return { opened: true, kind, handler, target_masked: masked };
 }
 
 function terminalCommand(params) {

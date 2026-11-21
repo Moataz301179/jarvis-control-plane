@@ -17,9 +17,10 @@ test('rejects local numbers and junk', () => {
   assert.throws(() => normalizeFaceTimeTarget(''));
 });
 
-test('builds audio and video URLs', () => {
+test('builds audio, video and cellular URLs', () => {
   assert.equal(faceTimeUrl('+201001234567', 'audio'), 'facetime-audio://+201001234567');
   assert.equal(faceTimeUrl('+201001234567', 'video'), 'facetime://+201001234567');
+  assert.equal(faceTimeUrl('+201001234567', 'cellular'), 'tel://+201001234567');
   assert.equal(faceTimeUrl('a@b.com', 'audio'), 'facetime-audio://a@b.com');
 });
 
