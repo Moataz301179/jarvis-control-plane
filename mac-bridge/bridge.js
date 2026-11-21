@@ -33,7 +33,7 @@ const token = process.env.JARVIS_MAC_BRIDGE_TOKEN;
 const baseUrl = process.env.JARVIS_BASE_URL || 'http://127.0.0.1:13100';
 if (!token) throw new Error('JARVIS_MAC_BRIDGE_TOKEN is required');
 
-const capabilities = ['open_terminal','list_files','disk_inventory','create_folder','arrange_photos','move_files','clean_temp_files','trash_file','cursor_status','cursor_open','cursor_agent','codex_agent','claude_agent','openjarvis_ask','terminal_command','remote_desktop_device','browser_profile_login','browser_profile_probe'];
+const capabilities = ['open_terminal','list_files','disk_inventory','create_folder','arrange_photos','move_files','clean_temp_files','trash_file','cursor_status','cursor_open','cursor_agent','codex_agent','claude_agent','openjarvis_ask','terminal_command','scan_network','organize_folder','delete_old_files','remote_desktop_device','browser_profile_login','browser_profile_probe'];
 let stopping = false;
 
 function withinHome(target) {
@@ -320,6 +320,85 @@ async function openJarvisAsk(params) {
   throw new Error(`OpenJarvis could not run on the Mac bridge: ${String(lastError?.stderr || lastError?.message || 'uv not found').slice(-2000)}`);
 }
 
+async function localPrivateSubnet() {
+  const { stdout } = await execFileAsync('/sbin/ifconfig', [], { timeout: 10000, maxBuffer: 1024 * 1024 });
+  const candidates = [...stdout.matchAll(/inet (\d+\.\d+\.\d+\.\d+) netmask (0x[0-9a-fA-F]+)/g)]
+    .map((match) => ({ ip: match[1], mask: parseInt(match[2], 16) >>> 0 }))
+    .filter((entry) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(entry.ip));
+  if (!candidates.length) return null;
+  const octets = candidates[0].ip.split('.').map(Number);
+  return `${octets[0]}.${octets[1]}.${octets[2]}.0/24`;
+}
+
+async function scanNetwork(params) {
+  const subnet = String(params.subnet || '').trim() || await localPrivateSubnet();
+  if (!subnet) throw new Error('No private local subnet found');
+  if (!/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(subnet)) throw new Error('Only private RFC1918 subnets can be scanned');
+  if (!/\/(2[4-9]|3[0-2])$/.test(subnet)) throw new Error('Scan size must be /24 or smaller');
+  const arp = await runWithInput('/usr/sbin/arp', ['-a'], { timeout: 10000 }).then((result) => result.stdout).catch(() => '');
+  let nmapAvailable = false;
+  let nmap = '';
+  for (const binary of ['/opt/homebrew/bin/nmap', '/usr/local/bin/nmap']) {
+    try {
+      await fs.access(binary);
+      nmapAvailable = true;
+      nmap = (await runWithInput(binary, ['-sn', subnet], { timeout: 60000, maxBuffer: 4 * 1024 * 1024 })).stdout;
+      break;
+    } catch { /* try next */ }
+  }
+  return { subnet, nmap_available: nmapAvailable, nmap: String(nmap).slice(0, 20000), arp: String(arp).slice(0, 20000) };
+}
+
+async function organizeFolder(params) {
+  const target = withinHome(params.path || home);
+  const mode = params.mode === 'date' ? 'date' : 'type';
+  const entries = await fs.readdir(target, { withFileTypes: true });
+  const sample = [];
+  let moved = 0;
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.name.startsWith('.')) continue;
+    const full = path.join(target, entry.name);
+    const stat = await fs.stat(full);
+    const bucket = mode === 'date'
+      ? `${stat.getFullYear()}-${String(stat.getMonth() + 1).padStart(2, '0')}`
+      : (path.extname(entry.name).slice(1).toLowerCase() || 'no-extension');
+    const destination = path.join(target, bucket);
+    await fs.mkdir(destination, { recursive: true });
+    await fs.rename(full, path.join(destination, entry.name));
+    moved += 1;
+    if (sample.length < 20) sample.push(`${entry.name} -> ${bucket}/`);
+  }
+  return { folder: target, mode, moved, sample };
+}
+
+async function deleteOldFiles(params) {
+  if (!params.path) throw new Error('path is required');
+  const target = withinHome(params.path);
+  const days = Math.min(Math.max(Number(params.days) || 30, 1), 3650);
+  const dryRun = params.dry_run === true;
+  const cutoff = Date.now() - days * 86400000;
+  const entries = await fs.readdir(target, { withFileTypes: true });
+  const candidates = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const full = path.join(target, entry.name);
+    const stat = await fs.stat(full);
+    if (stat.mtimeMs < cutoff) candidates.push({ full, name: entry.name });
+  }
+  if (dryRun) return { folder: target, days, dry_run: true, count: candidates.length, sample: candidates.slice(0, 20).map((item) => item.name) };
+  const trash = path.join(home, '.Trash');
+  await fs.mkdir(trash, { recursive: true });
+  const moved = [];
+  for (const candidate of candidates) {
+    let destination = path.join(trash, candidate.name);
+    try { await fs.access(destination); destination = path.join(trash, `${candidate.name}-${Date.now()}`); } catch { /* free name */ }
+    await fs.rename(candidate.full, destination);
+    moved.push(candidate.name);
+    if (moved.length >= 500) break;
+  }
+  return { folder: target, days, dry_run: false, moved: moved.length, sample: moved.slice(0, 20) };
+}
+
 function terminalCommand(params) {
   const command = String(params.command || '').trim();
   const violation = terminalCommandViolation(command);
@@ -369,6 +448,9 @@ async function execute(job) {
     case 'claude_agent': return claudeAgent(params);
     case 'openjarvis_ask': return openJarvisAsk(params);
     case 'terminal_command': return terminalCommand(params);
+    case 'scan_network': return scanNetwork(params);
+    case 'organize_folder': return organizeFolder(params);
+    case 'delete_old_files': return deleteOldFiles(params);
     case 'browser_profile_login': return browserProfileLogin(params);
     case 'browser_profile_probe': return browserProfileProbe(params);
     case 'remote_desktop_device': return { device_id: process.env.JARVIS_RDC_DEVICE_ID || null, hostname: os.hostname() };
