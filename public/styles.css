@@ -701,7 +701,7 @@ body.jarvis-listening .presence-lip-glow, body.jarvis-listening .chat-lip-glow {
 
 /* Quiet mode: hide noise cards and unblock the background */
 .quiet-hidden{display:none!important}
-.view.show-quiet article.quiet-hidden{display:block!important}
+.view.show-quiet .quiet-hidden{display:block!important}
 .quiet-toggle{font-size:9px}
 #usageStrip{display:none!important}
 .command-talk-control{right:16px!important;top:auto!important;bottom:16px!important;min-width:0!important;padding:9px 14px!important;border-radius:999px!important;gap:9px!important}

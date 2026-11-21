@@ -268,6 +268,7 @@ function applyQuietPanels(){
   for(const [viewId,match] of specs){
     const view=$('#view-'+viewId);if(!view)continue;
     view.querySelectorAll('article.panel').forEach((panel)=>{if(match(panel))panel.classList.add('quiet-hidden');});
+    if(viewId==='settings'){view.querySelectorAll('.settings-group').forEach((heading)=>{let node=heading.nextElementSibling;let hasVisible=false;while(node&&!node.classList.contains('settings-group')){if(node.matches('article.panel')&&!node.classList.contains('quiet-hidden'))hasVisible=true;node=node.nextElementSibling;}heading.classList.toggle('quiet-hidden',!hasVisible);});}
     const head=view.querySelector('.section-head');
     if(head&&!head.querySelector('.quiet-toggle')){const button=document.createElement('button');button.type='button';button.className='quiet-toggle holo-button';button.textContent='⋯ DETAILS';button.addEventListener('click',()=>view.classList.toggle('show-quiet'));head.appendChild(button);}
   }
