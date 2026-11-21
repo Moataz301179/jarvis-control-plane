@@ -179,6 +179,51 @@ function installCollapsibleWidgets(){
   new MutationObserver(enhance).observe(document.body,{childList:true,subtree:true});
   enhance();
 }
+function installNavigationIA(){
+  const nav=document.querySelector('.side-nav');const content=$('.content');if(!nav||!content)return;
+  const addView=(id,kicker,title,refreshId)=>{if($('#view-'+id))return $('#view-'+id);const section=document.createElement('section');section.id='view-'+id;section.className='view';section.innerHTML=`<div class="section-head"><div><p class="micro purple">${kicker}</p><h1>${title}</h1></div><button id="${refreshId}" class="holo-button" type="button">↻ REFRESH</button></div>`;content.appendChild(section);return section;};
+  const navButton=(view,label,glyph)=>{const button=document.createElement('button');button.className='nav-button';button.type='button';button.dataset.view=view;button.setAttribute('aria-label',label);button.innerHTML=`<span aria-hidden="true" style="width:16px;text-align:center">${glyph}</span><span>${label}</span>`;return button;};
+  const groupLabel=(text,group)=>{const node=document.createElement('div');node.className='nav-group-label';node.dataset.group=group;node.textContent=text;return node;};
+  const overviewBtn=nav.querySelector('[data-view="overview"]');
+  const projectsBtn=nav.querySelector('[data-view="projects"]');
+  const macBtn=nav.querySelector('[data-view="mac"]');
+  const settingsBtn=nav.querySelector('[data-view="settings"]');
+  if(!$('#chatNav')&&overviewBtn){const chat=document.createElement('button');chat.id='chatNav';chat.className='nav-button';chat.type='button';chat.setAttribute('aria-label','Chat');chat.innerHTML='<span aria-hidden="true" style="width:16px;text-align:center">◍</span><span>Chat</span>';chat.addEventListener('click',()=>{setChatWorkspace(true);chat.classList.add('active');setTimeout(()=>chat.classList.remove('active'),700);});overviewBtn.insertAdjacentElement('afterend',chat);}
+  if(projectsBtn&&!$('#nav-memory')){const memory=navButton('memory','Memory','◈');memory.id='nav-memory';projectsBtn.insertAdjacentElement('afterend',memory);}
+  if(macBtn&&!$('#nav-security')){const security=navButton('security','Security','⛨');security.id='nav-security';macBtn.insertAdjacentElement('afterend',security);}
+  if(overviewBtn&&!nav.querySelector('.nav-group-label[data-group="operate"]'))overviewBtn.insertAdjacentElement('beforebegin',groupLabel('OPERATE','operate'));
+  if(macBtn&&!nav.querySelector('.nav-group-label[data-group="control"]'))macBtn.insertAdjacentElement('beforebegin',groupLabel('CONTROL','control'));
+  if(settingsBtn&&!nav.querySelector('.nav-group-label[data-group="system"]'))settingsBtn.insertAdjacentElement('beforebegin',groupLabel('SYSTEM','system'));
+
+  const memoryView=addView('memory','DURABLE CONTEXT · RECALL','Memory','refreshMemory');
+  const memoryPanel=$('#sharedMemoryPanel');if(memoryPanel&&memoryPanel.parentElement!==memoryView)memoryView.appendChild(memoryPanel);
+
+  const securityView=addView('security','TERMINAL · RECON · SCOPE','Security','refreshSecurity');
+  const keyPanel=$('#providerKeyForm')?.closest('article');if(keyPanel&&keyPanel.parentElement!==securityView)securityView.appendChild(keyPanel);
+  const githubPanel=$('#githubForm')?.closest('article');if(githubPanel&&githubPanel.parentElement!==securityView)securityView.appendChild(githubPanel);
+  if(!$('#securityScopePanel')){const panel=document.createElement('article');panel.id='securityScopePanel';panel.className='panel';panel.innerHTML='<div class="panel-head"><div><span class="micro">LINUX RECON SCOPE</span><h3>Authorized targets and tools</h3></div><span id="securityScopeState" class="status">CHECKING</span></div><p class="muted">The local model can run nmap, dig, whois, traceroute and curl on the VPS. Private and loopback targets are always allowed; every other target must be listed in the scope file.</p><div id="securityScope" class="stack"></div>';securityView.appendChild(panel);}
+
+  const settings=$('#view-settings');const elevenPanel=$('#elevenForm')?.closest('article');if(elevenPanel&&settings&&elevenPanel.parentElement!==settings)settings.appendChild(elevenPanel);
+  const projects=$('#view-projects');const repoPanel=$('#repositoryForm')?.closest('article');if(repoPanel&&projects){const grid=$('#projectGrid');projects.insertBefore(repoPanel,grid);}
+
+  const metrics=$('#overviewMetrics');const room=$('#commandRoom');if(metrics&&room&&room.parentElement===metrics.parentElement)room.parentElement.insertBefore(metrics,room);
+
+  $('#refreshMemory')?.addEventListener('click',()=>loadData());
+  $('#refreshSecurity')?.addEventListener('click',()=>{loadSecurityScope();loadProviderKeys();});
+  loadSecurityScope();
+}
+async function loadSecurityScope(){
+  const node=$('#securityScope');if(!node)return;
+  try{
+    const scope=await api('/v1/linux-tools');
+    const chips=(items)=>items&&items.length?items.map((item)=>`<span class="pill">${esc(item)}</span>`).join(' '):'<span class="muted">none</span>';
+    node.innerHTML=`<div class="system-row"><div><strong>ALLOWED DOMAINS</strong><small>${esc(scope.scope_file)}</small></div><div class="button-row">${chips(scope.domains)}</div></div><div class="system-row"><div><strong>ALLOWED IPS</strong></div><div class="button-row">${chips(scope.ips)}</div></div><div class="system-row"><div><strong>ALLOWED CIDRS</strong></div><div class="button-row">${chips(scope.cidrs)}</div></div><div class="system-row"><div><strong>TOOLS</strong><small>Allowlisted flags only · 60s timeout · audited</small></div><div class="button-row"><span class="pill">nmap</span><span class="pill">dig</span><span class="pill">whois</span><span class="pill">traceroute</span><span class="pill">curl</span></div></div>`;
+    const state=$('#securityScopeState');if(state){state.textContent='LOADED';state.className='status completed';}
+  }catch(error){
+    node.textContent=error.message;
+    const state=$('#securityScopeState');if(state){state.textContent='UNAVAILABLE';state.className='status failed';}
+  }
+}
 function installControlSurfaces(){
   const shell=$('#shell'),main=$('.main'),chat=$('#chatConsole'),overview=$('#view-overview'),metrics=$('#overviewMetrics');
   if(shell&&main&&chat&&!$('#statusConsole')){
@@ -199,8 +244,8 @@ function renderAccountConnections(){
   const node=$('#accountConnectionList');if(!node)return;const accounts=state.accountConnections||[];const verified=accounts.filter(a=>a.status==='verified').length;$('#accountConnectionCount').textContent=`${verified} VERIFIED`;
   node.innerHTML=accounts.length?accounts.map(account=>`<div class="system-row"><div><strong>${esc(account.service)} · ${esc(account.account_alias)}</strong><small>${esc(account.project_code)} · ${esc(account.status)} · expires ${formatTime(account.expires_at)}</small></div><div class="button-row">${['opened','awaiting_verification','failed'].includes(account.status)?`<button class="holo-button primary" data-account-verify="${esc(account.id)}">VERIFY LOGIN</button>`:statusBadge(account.status)}</div></div>`).join(''):'<div class="empty-state">No account connections yet. Ask JARVIS in chat to connect an account.</div>';
 }
-const titles = { overview: 'OVERVIEW', agents: 'AGENTS', projects: 'PROJECTS', mac: 'MAC CONTROL', settings: 'SETTINGS' };
-function setView(view) { for (const b of document.querySelectorAll('[data-view]')) b.classList.toggle('active', b.dataset.view === view); for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.id === `view-${view}`); $('#pageTitle').textContent = titles[view]; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+const titles = { overview: 'OVERVIEW', agents: 'AGENTS', projects: 'PROJECTS', mac: 'MAC CONTROL', settings: 'SETTINGS', memory: 'MEMORY', security: 'SECURITY' };
+function setView(view) { for (const b of document.querySelectorAll('[data-view]')) b.classList.toggle('active', b.dataset.view === view); for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.id === `view-${view}`); $('#pageTitle').textContent = titles[view]; if (view === 'security') loadSecurityScope(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
 
 function renderStatus() {
   if (!state.status) return;
@@ -285,7 +330,7 @@ function renderRepositories(){const data=state.repositories?.repositories||[];$(
 function renderVentureRepositories(){const node=$('#ventureRepositoryList');if(!node)return;const data=state.ventureRepositories||[];$('#ventureRepoCount').textContent=`${data.length} REPOSITORIES`;node.innerHTML=data.length?data.map(repo=>`<div class="system-row"><div><strong>${esc(repo.repo_full_name)}</strong><small>${esc(repo.business_scope)} · ${esc(repo.visibility)} · ${esc(repo.handover_status)}${repo.local_path?` · ${esc(repo.local_path)}`:' · remote only'}</small><small>${esc(repo.role)}</small></div><span class="pill ${repo.local_path?'':'off'}">${repo.local_path?'LOCAL':'REMOTE'}</span></div>`).join(''):'<div class="empty-state">No repository registry imported.</div>';}
 function renderHermes(){const node=$('#hermesBridgeStatus');if(!node)return;const data=state.hermesState||{};const bridge=data.bridge||{};const online=bridge.last_seen&&Date.now()-new Date(bridge.last_seen).getTime()<60000&&bridge.gateway_status==='online';node.textContent=online?'CONNECTED':'NOT CONNECTED';node.className=`status ${online?'completed':'failed'}`;$('#hermesProfile').textContent=`${bridge.profile||'default'} · ${online?`last seen ${formatTime(bridge.last_seen)}`:'waiting for Mac bridge'}`;$('#hermesGateway').textContent=(bridge.gateway_status||'offline').toUpperCase();$('#hermesGateway').className=`pill ${online?'':'off'}`;const jobs=data.jobs||[];$('#hermesJobs').innerHTML=jobs.length?jobs.slice(0,20).map(job=>`<div class="system-row"><div><strong>${esc(job.title)}</strong><small>${esc(job.project_code)} · ${esc(job.risk)} · ${esc((job.toolsets||[]).join(', '))} · ${formatTime(job.created_at)}</small>${job.result?`<small>${esc(String(job.result).slice(0,260))}</small>`:''}</div>${statusBadge(job.status)}</div>`).join(''):'<div class="empty-state">No Hermes jobs yet.</div>';}
 function renderMemory(){const list=$('#memorySearchResults');if(!list)return;const data=state.memoryEntries||[];$('#memoryCount').textContent=`${data.length} ENTRIES`;list.innerHTML=data.length?data.map(item=>`<div class="system-row"><div><strong>${esc(item.title)}</strong><small>${esc(item.project_code)} · ${esc(item.agent_id)} · ${esc(item.confidence)} · ${formatTime(item.updated_at)}</small><small>${esc(String(item.content).slice(0,320))}</small></div><span class="pill">${esc(item.memory_type)}</span></div>`).join(''):'<div class="empty-state">No shared memory entries found.</div>';}
-async function loadData(){const [data,settings,ollamaStatus,telegramStatus,nousStatus,agentRingStatus,githubStatus,repositories,ventureRepositories,hermesData,memoryData,approvalData,accountData]=await Promise.all([api('/v1/agents-projects/state'),api('/v1/settings'),api('/v1/providers/ollama/status'),api('/v1/providers/telegram/status'),api('/v1/providers/nous/status'),api('/v1/agent-ring'),api('/v1/providers/github/status'),api('/v1/repositories'),api('/v1/venture/repositories'),api('/v1/hermes/state'),api('/v1/memory?project_code=STUDIO'),api('/v1/approvals'),api('/v1/account-connections')]);state.data=data;state.settings=settings;state.ollamaStatus=ollamaStatus;state.telegramStatus=telegramStatus;state.nousStatus=nousStatus;state.agentRingStatus=agentRingStatus;state.githubStatus=githubStatus;state.repositories=repositories;state.ventureRepositories=ventureRepositories.repositories||[];state.hermesState=hermesData;state.memoryEntries=memoryData.memories||[];state.approvals=approvalData.pending||[];state.accountConnections=accountData.accounts||[];renderRepositories();renderVentureRepositories();renderHermes();renderMemory();renderGithubStatus();renderApprovals();renderAccountConnections();await Promise.all([loadStatus(),loadElevenStatus(),loadFactoryData()]);renderOverview();loadProviderKeys().catch(()=>null);}
+async function loadData(){const [data,settings,ollamaStatus,telegramStatus,nousStatus,agentRingStatus,githubStatus,repositories,ventureRepositories,hermesData,memoryData,approvalData,accountData]=await Promise.all([api('/v1/agents-projects/state'),api('/v1/settings'),api('/v1/providers/ollama/status'),api('/v1/providers/telegram/status'),api('/v1/providers/nous/status'),api('/v1/agent-ring'),api('/v1/providers/github/status'),api('/v1/repositories'),api('/v1/venture/repositories'),api('/v1/hermes/state'),api('/v1/memory?project_code=STUDIO'),api('/v1/approvals'),api('/v1/account-connections')]);state.data=data;state.settings=settings;state.ollamaStatus=ollamaStatus;state.telegramStatus=telegramStatus;state.nousStatus=nousStatus;state.agentRingStatus=agentRingStatus;state.githubStatus=githubStatus;state.repositories=repositories;state.ventureRepositories=ventureRepositories.repositories||[];state.hermesState=hermesData;state.memoryEntries=memoryData.memories||[];state.approvals=approvalData.pending||[];state.accountConnections=accountData.accounts||[];renderRepositories();renderVentureRepositories();renderHermes();renderMemory();renderGithubStatus();renderApprovals();renderAccountConnections();await Promise.all([loadStatus(),loadElevenStatus(),loadFactoryData()]);renderOverview();loadProviderKeys().catch(()=>null);loadSecurityScope().catch(()=>null);}
 
 async function loadModels(force=false){try{const data=await api(`/v1/models${force?'?refresh=1':''}`);state.allModels=data.models;const providerFilter=$('#providerFilter');const providers=[...new Set(data.models.map(m=>m.provider))].sort();
 if(!providerFilter.options.length||providerFilter.dataset.all!=='1'){providerFilter.dataset.all='1';providerFilter.innerHTML='<option value="all">ALL PROVIDERS</option>'+providers.map(p=>`<option value="${esc(p)}">${esc(p.toUpperCase())}</option>`).join('');}
@@ -534,7 +579,7 @@ async function startElevenVoice(initialRequest=''){
   }catch(e){await stopLiveVoice();if(/daily limit|agent.*limit|reached/i.test(e.message)){toast('Live voice quota reached — switching to voice turn fallback');startVoiceTurn();}else toast(`Voice: ${e.message}`);}
 }
 
-installAudioControls();installClaudeControls();installHermesControls();installAgentFactory();installRepositoryRegistry();installGithubControls();installProviderKeyControls();installControlSurfaces();installPresenceLipSync();installChatPresence();installChatSessions();installCollapsibleWidgets();
+installAudioControls();installClaudeControls();installHermesControls();installAgentFactory();installRepositoryRegistry();installGithubControls();installProviderKeyControls();installControlSurfaces();installPresenceLipSync();installChatPresence();installChatSessions();installNavigationIA();installCollapsibleWidgets();
 $('#loginForm').addEventListener('submit',async(e)=>{e.preventDefault();try{await api('/v1/session',{method:'POST',body:JSON.stringify({token:$('#token').value})});$('#token').value='';await bootstrap();}catch(err){$('#loginError').textContent=err.message;}});
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>setView(b.dataset.view));for(const b of document.querySelectorAll('[data-jump]'))b.addEventListener('click',()=>setView(b.dataset.jump));$('#homeButton').addEventListener('click',()=>setView('overview'));$('#logout').addEventListener('click',async()=>{await api('/v1/session',{method:'DELETE'});showLogin();});
 $('#refreshAgents').addEventListener('click',loadData);$('#refreshProjects').addEventListener('click',loadData);$('#refreshMac').addEventListener('click',loadData);$('#refreshModels').addEventListener('click',()=>loadModels(true));$('#applyModel').addEventListener('click',async()=>{const[provider,...rest]=$('#modelSelect').value.split('::');try{await api('/v1/models/select',{method:'POST',body:JSON.stringify({provider,model:rest.join('::')})});toast('Model applied');await Promise.all([loadModels(),loadStatus()]);}catch(e){toast(e.message)}});
