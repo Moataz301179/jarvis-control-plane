@@ -140,13 +140,62 @@ function renderProviderKeys(){
 function installChatPresence(){
   const body=document.querySelector('#chatConsole .intelligence-body');const header=body?.querySelector('.mini-chat-head');
   if(!body||!header||body.querySelector('.jarvis-chat-presence'))return;
-  const stage=document.createElement('div');stage.className='jarvis-chat-presence';stage.setAttribute('aria-hidden','true');stage.innerHTML='<div class="chat-face-frame"><img class="chat-face-base" src="assets/jarvis-hologram-face.png" alt=""><span class="chat-mouth"><img class="mouth-closed" src="assets/jarvis-mouth-closed.png" alt=""><img class="mouth-open" src="assets/jarvis-mouth-open.png" alt=""></span></div>';
+  const stage=document.createElement('div');stage.className='jarvis-chat-presence';stage.setAttribute('aria-hidden','true');stage.innerHTML=jarvisFaceMarkup();
   header.insertAdjacentElement('afterend',stage);body.classList.add('has-chat-presence');
+}
+function jarvisFaceMarkup(){
+  return `<svg class="jarvis-face-svg" viewBox="0 0 400 420" role="img" aria-label="JARVIS holographic face">
+  <defs>
+    <radialGradient id="jf-head" cx="50%" cy="38%" r="62%"><stop offset="0%" stop-color="#5b3f86" stop-opacity=".95"/><stop offset="55%" stop-color="#2a1740" stop-opacity=".93"/><stop offset="100%" stop-color="#0b0613" stop-opacity=".97"/></radialGradient>
+    <radialGradient id="jf-eye" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#eafff5"/><stop offset="35%" stop-color="#57ffb9"/><stop offset="75%" stop-color="#14b87a"/><stop offset="100%" stop-color="#0a5c43" stop-opacity=".2"/></radialGradient>
+    <linearGradient id="jf-edge" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a66bff"/><stop offset="55%" stop-color="#4c2b73"/><stop offset="100%" stop-color="#35ffa8"/></linearGradient>
+    <radialGradient id="jf-mouth" cx="50%" cy="40%" r="60%"><stop offset="0%" stop-color="#9dffd6"/><stop offset="55%" stop-color="#1a8a63"/><stop offset="100%" stop-color="#071a14"/></radialGradient>
+    <filter id="jf-glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="jf-soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="12"/></filter>
+  </defs>
+  <ellipse cx="200" cy="210" rx="150" ry="180" fill="#35ffa8" opacity=".08" filter="url(#jf-soft)"/>
+  <g class="jf-breathe">
+    <path d="M70 420 C80 350 130 320 200 318 C270 320 320 350 330 420 Z" fill="url(#jf-head)" stroke="url(#jf-edge)" stroke-width="1.5" opacity=".9"/>
+    <path d="M120 420 C130 368 160 344 200 342 C240 344 270 368 280 420" fill="none" stroke="#35ffa8" stroke-opacity=".45" stroke-width="1.2"/>
+    <path d="M165 300 L165 345 C165 365 235 365 235 345 L235 300 Z" fill="#140a22" stroke="url(#jf-edge)" stroke-width="1.2"/>
+    <path d="M200 52 C130 52 92 108 92 180 C92 248 138 300 200 312 C262 300 308 248 308 180 C308 108 270 52 200 52 Z" fill="url(#jf-head)" stroke="url(#jf-edge)" stroke-width="2"/>
+    <path d="M132 120 C160 96 240 96 268 120 L258 150 C228 132 172 132 142 150 Z" fill="#1a0f2a" stroke="#8b5cf6" stroke-opacity=".55"/>
+    <path d="M150 104 L250 104" stroke="#35ffa8" stroke-opacity=".5" stroke-width="1.5"/>
+    <g stroke="#a66bff" stroke-opacity=".18" fill="none" stroke-width="1">
+      <path d="M110 170 C140 180 170 185 200 185 C230 185 260 180 290 170"/>
+      <path d="M108 220 C140 232 170 238 200 238 C230 238 260 232 292 220"/>
+      <path d="M140 260 C165 272 235 272 260 260"/>
+      <path d="M200 60 L200 100"/><path d="M120 140 L150 160"/><path d="M280 140 L250 160"/>
+    </g>
+    <circle cx="96" cy="200" r="26" fill="#0b0613" stroke="url(#jf-edge)" stroke-width="2"/><circle cx="96" cy="200" r="14" fill="none" stroke="#35ffa8" stroke-opacity=".8" stroke-width="2"/>
+    <circle cx="304" cy="200" r="26" fill="#0b0613" stroke="url(#jf-edge)" stroke-width="2"/><circle cx="304" cy="200" r="14" fill="none" stroke="#35ffa8" stroke-opacity=".8" stroke-width="2"/>
+    <path d="M132 168 C150 158 178 158 190 166" fill="none" stroke="#0d0714" stroke-width="8" stroke-linecap="round"/>
+    <path d="M268 168 C250 158 222 158 210 166" fill="none" stroke="#0d0714" stroke-width="8" stroke-linecap="round"/>
+    <g filter="url(#jf-glow)">
+      <ellipse cx="163" cy="186" rx="26" ry="12" fill="#0a1a13" stroke="#35ffa8" stroke-opacity=".55"/><ellipse cx="163" cy="186" rx="12" ry="10" fill="url(#jf-eye)"/><circle cx="163" cy="186" r="4" fill="#eafff5"/>
+      <ellipse cx="237" cy="186" rx="26" ry="12" fill="#0a1a13" stroke="#35ffa8" stroke-opacity=".55"/><ellipse cx="237" cy="186" rx="12" ry="10" fill="url(#jf-eye)"/><circle cx="237" cy="186" r="4" fill="#eafff5"/>
+    </g>
+    <path d="M200 196 L192 240 C196 246 204 246 208 240 Z" fill="#1a0f2a" stroke="#a66bff" stroke-opacity=".35"/>
+    <path d="M140 230 C150 252 165 266 178 272" fill="none" stroke="#a66bff" stroke-opacity=".25"/><path d="M260 230 C250 252 235 266 222 272" fill="none" stroke="#a66bff" stroke-opacity=".25"/>
+    <g class="jf-mouth">
+      <ellipse class="jf-mouth-glow" cx="200" cy="286" rx="42" ry="20" fill="#35ffa8" opacity="0" filter="url(#jf-soft)"/>
+      <path class="jf-lips-upper" d="M160 282 C176 272 188 276 200 280 C212 276 224 272 240 282" fill="none" stroke="#7d699c" stroke-width="3" stroke-linecap="round"/>
+      <path class="jf-lips-lower" d="M160 290 C176 300 188 298 200 296 C212 298 224 300 240 290" fill="none" stroke="#7d699c" stroke-width="3" stroke-linecap="round"/>
+      <g class="jf-mouth-open">
+        <ellipse cx="200" cy="288" rx="34" ry="16" fill="url(#jf-mouth)"/>
+        <path d="M172 282 C184 278 194 278 200 280 C206 278 216 278 228 282" fill="none" stroke="#bfffe8" stroke-width="2" stroke-linecap="round" opacity=".75"/>
+        <ellipse cx="200" cy="296" rx="16" ry="5" fill="#35ffa8" opacity=".35"/>
+      </g>
+    </g>
+    <path d="M168 306 C180 314 220 314 232 306" fill="none" stroke="#35ffa8" stroke-opacity=".4" stroke-width="2"/>
+    <rect class="jf-scan" x="92" y="52" width="216" height="6" fill="#35ffa8" opacity=".08"/>
+  </g>
+</svg>`;
 }
 function installPresenceLipSync(){
   const presence=document.getElementById('presenceAnimation');if(!presence||presence.querySelector('.jarvis-face-stack'))return;
   const stack=document.createElement('div');stack.className='jarvis-face-stack';stack.setAttribute('aria-hidden','true');
-  stack.innerHTML='<div class="face-frame"><img class="presence-face-base" src="assets/jarvis-hologram-face.png" alt=""><span class="presence-mouth"><img class="mouth-closed" src="assets/jarvis-mouth-closed.png" alt=""><img class="mouth-open" src="assets/jarvis-mouth-open.png" alt=""></span></div>';
+  stack.innerHTML=jarvisFaceMarkup();
   presence.append(stack);
 }
 function installCollapsibleWidgets(){
