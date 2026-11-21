@@ -1142,11 +1142,23 @@ async function updateRuntimeSettings(body) {
 
 async function getProviderCredentials(provider) {
   const stored = await query('SELECT * FROM provider_credentials WHERE provider=$1', [provider]);
-  if (!stored.rows.length) return { apiKey: '', agentId: '', chatId: '', baseUrl: '', metadata: {} };
+  const base = {
+    apiKey: '',
+    agentId: stored.rows[0]?.agent_id || '',
+    chatId: stored.rows[0]?.metadata?.chat_id || '',
+    baseUrl: stored.rows[0]?.metadata?.base_url || '',
+    metadata: stored.rows[0]?.metadata || {},
+  };
+  // Ollama Cloud keys in the pool rotate; they override the single stored key.
+  if (provider === 'ollama') {
+    const pooled = await getProviderKey('ollama-cloud').catch(() => null);
+    if (pooled) return { ...base, apiKey: pooled.key, baseUrl: base.baseUrl || config.ollamaCloudUrl };
+  }
+  if (!stored.rows.length) return base;
   try {
-    return { apiKey: decryptSecret(stored.rows[0].encrypted_key), agentId: stored.rows[0].agent_id || '', chatId: stored.rows[0].metadata?.chat_id || '', baseUrl: stored.rows[0].metadata?.base_url || '', metadata: stored.rows[0].metadata || {} };
+    return { ...base, apiKey: decryptSecret(stored.rows[0].encrypted_key) };
   } catch {
-    return { apiKey: '', agentId: stored.rows[0].agent_id || '', chatId: stored.rows[0].metadata?.chat_id || '', baseUrl: stored.rows[0].metadata?.base_url || '', metadata: stored.rows[0].metadata || {} };
+    return base;
   }
 }
 
