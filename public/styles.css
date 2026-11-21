@@ -659,3 +659,12 @@ body.jarvis-listening .presence-lip-glow, body.jarvis-listening .chat-lip-glow {
 @keyframes talk-control-pulse { from { transform: scale(.9); opacity: .65; } to { transform: scale(1.1); opacity: 1; } }
 @media (max-width: 760px) { .command-talk-control { right: 14px; top: 14px; min-width: 170px; padding: 10px 12px; } }
 
+
+/* Chat sessions */
+.chat-sessions{border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);padding:8px 10px;max-height:190px;overflow:auto}
+.chat-sessions-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.chat-session-list{display:grid;gap:4px}
+.chat-session{text-align:left;background:transparent;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:6px 8px;color:inherit;cursor:pointer;font:inherit}
+.chat-session.active{border-color:rgba(120,200,255,.55);background:rgba(120,200,255,.08)}
+.chat-session strong{display:block;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-session small{display:block;font-size:10px;opacity:.65}

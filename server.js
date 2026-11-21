@@ -26,6 +26,7 @@ import { getProviderKey, peekProviderKey, markProviderKeyExhausted, addProviderK
 import { assertTerminalCommand } from './lib/terminal-guard.js';
 import { runLinuxTool, linuxSecurityScope } from './lib/linux-tools.js';
 import { shouldRemember, memoryTitle, extractKeywords } from './lib/memory-recall.js';
+import { buildTranscript, extractiveSummary } from './lib/conversation-memory.js';
 import { saveGitHubCredential, githubCredentialStatus, createDeploymentAdapter, updateDeploymentAdapter, deploymentState, createDeploymentRequest, approveAndDispatchDeployment, syncDeploymentRun, syncPendingDeployments } from './lib/deployment-adapters.js';
 import { saveBusinessProvider, businessProviderStatus, runBusinessDiscovery, prepareCampaign, approveBusinessWorkProduct, launchBusinessCampaign, rollbackBusinessCampaign, prepareOutreachSequence, sendOutreachEmail, verifyEmailRoundTrip, pollOutreachReplies, recordMetricSnapshot, revenueReport, executeGrok, businessExecutionState } from './lib/business-execution.js';
 import { listAgentModelRoutes, resolveCentralModelRoute, upsertAgentModelRoute } from './lib/model-routes.js';
@@ -1299,6 +1300,78 @@ async function latestConversation() {
   return latest.rows.length ? getConversation(latest.rows[0].id) : { conversation: null, messages: [] };
 }
 
+async function listConversations() {
+  const result = await query(`SELECT c.id,c.title,c.provider,c.model,c.created_at,c.updated_at,
+    (SELECT count(*)::int FROM chat_messages m WHERE m.conversation_id=c.id) AS message_count,
+    (SELECT left(m.content,160) FROM chat_messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message
+    FROM conversations c ORDER BY c.updated_at DESC LIMIT 60`);
+  return { conversations: result.rows };
+}
+
+async function createConversation(body = {}) {
+  const title = String(body.title || 'New chat').trim().slice(0, 120) || 'New chat';
+  const settings = await getModelSettings();
+  const result = await query('INSERT INTO conversations (title,provider,model) VALUES ($1,$2,$3) RETURNING *', [title, settings.provider, settings.model]);
+  return { conversation: result.rows[0], messages: [] };
+}
+
+async function deleteConversation(id) {
+  await query('DELETE FROM chat_messages WHERE conversation_id=$1', [id]);
+  const result = await query('DELETE FROM conversations WHERE id=$1 RETURNING id', [id]);
+  if (!result.rows.length) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 });
+  return { deleted: id };
+}
+
+const summarizing = new Set();
+
+async function summarizeConversation(id) {
+  const conversation = (await query('SELECT id,title FROM conversations WHERE id=$1', [id])).rows[0];
+  if (!conversation) return null;
+  const messages = (await query('SELECT role,content FROM chat_messages WHERE conversation_id=$1 ORDER BY created_at ASC LIMIT 60', [id])).rows;
+  if (messages.length < 2) return null;
+  const transcript = buildTranscript(messages, 6000);
+  let summary = '';
+  try {
+    const response = await fetch(`${config.ollamaUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: config.ollamaModel,
+        stream: false,
+        messages: [
+          { role: 'system', content: 'Summarize this chat for durable memory. Capture owner preferences, decisions, tasks, project facts and open questions. Maximum 120 words. No preamble.' },
+          { role: 'user', content: transcript },
+        ],
+        options: { temperature: 0.2, num_predict: 240 },
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (response.ok) {
+      const body = await response.json().catch(() => ({}));
+      summary = String(body?.message?.content || '').trim();
+    }
+  } catch { /* use extractive fallback */ }
+  if (!summary) summary = extractiveSummary(messages);
+  if (!summary) return null;
+  const project = /hotelsvendors|\bHV\b/i.test(transcript) ? 'HV' : 'STUDIO';
+  const sourceRef = `conversation:${id}`;
+  await query("UPDATE shared_memory_entries SET status='superseded' WHERE source_ref=$1 AND memory_type='conversation_summary' AND status='active'", [sourceRef]);
+  const inserted = await query('INSERT INTO shared_memory_entries (project_code,agent_id,memory_type,title,content,tags,source_ref,confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,title,memory_type,updated_at', [project, 'jarvis', 'conversation_summary', `Chat: ${String(conversation.title || 'conversation').slice(0, 200)}`, summary.slice(0, 4000), JSON.stringify(['conversation', 'auto']), sourceRef, 'estimated']);
+  return inserted.rows[0];
+}
+
+async function maybeSummarizeConversation(id) {
+  if (!id || summarizing.has(id)) return null;
+  const last = (await query("SELECT updated_at FROM shared_memory_entries WHERE source_ref=$1 AND memory_type='conversation_summary' AND status='active' ORDER BY updated_at DESC LIMIT 1", [`conversation:${id}`])).rows[0];
+  if (last && Date.now() - new Date(last.updated_at).getTime() < 90000) return null;
+  summarizing.add(id);
+  try {
+    return await summarizeConversation(id);
+  } finally {
+    summarizing.delete(id);
+  }
+}
+
 function parseImage(dataUrl) {
   if (!dataUrl) return null;
   const match = String(dataUrl).match(/^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/);
@@ -1759,7 +1832,7 @@ async function chat(body) {
     query("SELECT status,hostname,last_seen,capabilities FROM mac_bridge_status WHERE id='primary'"),
     query("SELECT hostname,profile,gateway_status,last_seen,capabilities,metadata FROM hermes_bridge_status WHERE id='primary'"),
     listSharedMemory({ projectCode: memoryProject, queryText: message, agentId: 'jarvis', limit: 12 }).catch(() => []),
-    query("SELECT * FROM shared_memory_entries WHERE status='active' AND memory_type='owner_note' ORDER BY updated_at DESC LIMIT 8").catch(() => ({ rows: [] })),
+    query("SELECT * FROM shared_memory_entries WHERE status='active' AND memory_type IN ('owner_note','conversation_summary') ORDER BY updated_at DESC LIMIT 12").catch(() => ({ rows: [] })),
     capabilityRegistryState({ query: message.slice(0, 400), limit: 40 }).catch(() => ({ agents: [], capabilities: [], accounts: [] })),
     ownerProfileState().catch(() => null),
     recallConversationHistory(message, conversation.id).catch(() => []),
@@ -1815,6 +1888,7 @@ async function chat(body) {
     reply = await generateChatReply({ provider: settings.provider, model: settings.model, history, message, image, studioContext, memoryBlock, browserEvidence, conversationId: conversation.id, freeVerified: modelPolicy.freeVerified });
   }
   const saved = await query('INSERT INTO chat_messages (conversation_id,role,content,provider_used) VALUES ($1,$2,$3,$4) RETURNING *', [conversation.id, 'assistant', reply.content, reply.providerUsed]);
+  maybeSummarizeConversation(conversation.id).catch(() => null);
   await query('UPDATE conversations SET provider=$2,model=$3,updated_at=now() WHERE id=$1', [conversation.id, settings.provider, settings.model]);
   const browserSources = (reply.toolEvidence || []).map((entry) => ({ tool: entry.tool, ok: entry.ok, url: entry.result?.url || entry.result?.search_url || entry.result?.repository_url || null, path: entry.result?.workspace_path || null })).slice(0, 8);
   await query('INSERT INTO audit_events (actor,action,entity_type,entity_id,detail) VALUES ($1,$2,$3,$4,$5)', ['owner', 'chat.replied', 'conversation', conversation.id, { provider: reply.providerUsed, image: Boolean(image), browserSources }]);
@@ -3264,6 +3338,11 @@ async function handle(req, res) {
   const studioAlertMatch = url.pathname.match(/^\/v1\/studio\/alerts\/([^/]+)\/resolve$/);
   if (req.method === 'POST' && studioAlertMatch) { await requirePermission(req, 'mission:write'); return sendJson(res, 200, await resolveStudioAlert(decodeURIComponent(studioAlertMatch[1]))); }
   if (req.method === 'GET' && url.pathname === '/v1/chat/latest') return sendJson(res, 200, await latestConversation());
+  if (req.method === 'GET' && url.pathname === '/v1/conversations') { await requirePermission(req, 'read'); return sendJson(res, 200, await listConversations()); }
+  if (req.method === 'POST' && url.pathname === '/v1/conversations') { await requirePermission(req, 'access:write'); req.body = (await readJson(req)) || {}; return sendJson(res, 201, await createConversation(req.body)); }
+  const conversationMatch = url.pathname.match(/^\/v1\/conversations\/([0-9a-f-]{36})$/);
+  if (req.method === 'GET' && conversationMatch) { await requirePermission(req, 'read'); return sendJson(res, 200, await getConversation(conversationMatch[1])); }
+  if (req.method === 'DELETE' && conversationMatch) { await requirePermission(req, 'access:write'); return sendJson(res, 200, await deleteConversation(conversationMatch[1])); }
   if (req.method === 'POST' && url.pathname === '/v1/chat') {
     await requirePermission(req, 'mission:write');
     req.body = await readJson(req, 6 * 1024 * 1024);
