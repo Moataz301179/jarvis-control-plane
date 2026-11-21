@@ -347,8 +347,8 @@ function renderUsage(){
   const voiceUsage=state.elevenStatus?.ready?{used:Number(state.elevenStatus.characters_used),limit:Number(state.elevenStatus.characters_limit)}:{used:Number(el.charactersUsed??0),limit:Number(el.characterLimit??0)};const voiceLeft=Number.isFinite(voiceUsage.limit)&&voiceUsage.limit>0?Math.max(0,voiceUsage.limit-(Number.isFinite(voiceUsage.used)?voiceUsage.used:0)).toLocaleString():'—';$('#usageStrip').innerHTML=[`VOICE INPUT <b class="ready">LOCAL WHISPER</b>`,`VOICE OUTPUT <b class="ready">LOCAL SYSTEM</b>`,`ELEVENLABS <b class="${voice.enabled&&el.ready?'ready':'off'}">${voice.enabled&&el.ready?`${voiceLeft} chars left`:'SPEND OFF'}</b>`,`OLLAMA CLOUD <b class="${state.ollamaStatus?.ready?'ready':'off'}">${state.ollamaStatus?.ready?'READY':'NOT READY'}</b>`,`TELEGRAM <b class="${state.telegramStatus?.ready?'ready':'off'}">${state.telegramStatus?.ready?'CONNECTED':'NOT READY'}</b>`,`MAC <b class="${s.macBridge.status==='online'?'ready':'off'}">${s.macBridge.status}</b>`].map(x=>`<span>${x}</span>`).join('');
   $('#voiceMaxSeconds').value=voice.session_max_seconds;$('#voiceDailyLimit').value=voice.daily_session_limit;
   if(localStorage.getItem('jarvis_local_voice_migrated')!=='1'){localStorage.setItem('jarvis_speak_replies','1');localStorage.setItem('jarvis_local_voice_migrated','1');}
-  const speakToggle=document.getElementById('speakReplies');if(localStorage.getItem('jarvis_speak_replies')===null)localStorage.setItem('jarvis_speak_replies','1');if(speakToggle){speakToggle.checked=localStorage.getItem('jarvis_speak_replies')!=='0';const speakLabel=speakToggle.closest('label');if(speakLabel){[...speakLabel.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE).forEach(node=>{if(node.textContent.trim())node.textContent=' SPEAK CHAT REPLIES · FREE LOCAL SYSTEM VOICE';});speakLabel.title='Uses the browser/system voice. No ElevenLabs characters are used.';}}
-  const voiceToggle=document.getElementById('voiceEnabled');if(voiceToggle)voiceToggle.checked=Boolean(s.settings.voice.enabled);
+  const speakToggle=document.getElementById('speakReplies');if(localStorage.getItem('jarvis_speak_replies')===null)localStorage.setItem('jarvis_speak_replies','1');if(speakToggle){speakToggle.checked=localStorage.getItem('jarvis_speak_replies')!=='0';const speakLabel=speakToggle.closest('label');if(speakLabel){[...speakLabel.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE).forEach(node=>{if(node.textContent.trim())node.textContent=' SPEAK CHAT REPLIES · USES THE SELECTED ENGINE';});speakLabel.title='Uses the browser/system voice. No ElevenLabs characters are used.';}}
+  const voiceToggle=document.getElementById('voiceEnabled');if(voiceToggle)voiceToggle.checked=Boolean(s.settings.voice.enabled);const voiceProvider=document.getElementById('voiceProvider');if(voiceProvider)voiceProvider.value=s.settings.voice.provider||'browser';
   $('#settingsUsage').innerHTML=[['ElevenLabs',voice.enabled?(el.ready?'READY':'OFFLINE'):'SPEND OFF',voice.enabled?(el.ready?`${el.charactersUsed??'—'} / ${el.characterLimit??'—'} characters`:'Not authenticated'):'Paid speech generation is disabled',voice.enabled&&el.ready],['OpenRouter',s.providers.openrouter.ready?'READY':'OFFLINE','Free-model routing',s.providers.openrouter.ready],['Ollama',s.providers.ollama.ready?'READY':'OFFLINE','Private local inference',s.providers.ollama.ready]].map(([name,status,detail,ready])=>`<div class="system-row"><div><strong>${esc(name)}</strong><small>${esc(detail)}</small></div><span class="pill ${ready?'':'off'}">${esc(status)}</span></div>`).join('');
   $('#runtimeSettings').innerHTML=`<div class="system-row"><div><strong>Worker runtime</strong><small>${s.workers.filter(w=>w.online).length} of ${s.workers.length} authenticated</small></div><span class="pill ${s.workers.some(w=>w.online)?'':'off'}">${s.workers.some(w=>w.online)?'ONLINE':'OFFLINE'}</span></div><div class="system-row"><div><strong>Mac bridge</strong><small>${esc(s.macBridge.hostname||'No host')}</small></div><span class="pill ${s.macBridge.status==='online'?'':'off'}">${esc(s.macBridge.status)}</span></div><div class="system-row"><div><strong>Voice allowance today</strong><small>${sessions} / ${voice.daily_session_limit} sessions</small></div><span class="pill">${voice.session_max_seconds}s MAX</span></div><div class="button-row"><button id="auditCapabilities" class="holo-button" type="button">RUN LIVE CAPABILITY AUDIT</button></div><div id="capabilityAuditList" class="stack"></div>`;
   renderCapabilityAudit();
@@ -475,8 +475,9 @@ async function speak(text){
     if((resumeWake||state.rearmAfterVoice||state.autoWake)&&!state.voiceSession)setTimeout(()=>{if(!state.voiceSession&&!state.wakeArmed)armWakeWord();state.rearmAfterVoice=false;},900);
   };
   const paidVoiceEnabled=state.settings?.settings?.voice?.enabled===true&&state.elevenStatus?.ready;
+  const engine=state.settings?.settings?.voice?.provider||'browser';
   const useElevenLabs=async()=>{
-    if(!paidVoiceEnabled){finish();toast('Free local voice is unavailable and ElevenLabs fallback is off');return;}
+    if(engine==='elevenlabs'&&!paidVoiceEnabled){finish();toast('ElevenLabs is not ready — select a free engine');return;}
     try{
     try{state.voiceAudioSource?.stop();}catch{}try{state.voiceAudioContext?.close();}catch{}
     state.voiceAudioContext=null;state.voiceAudioSource=null;state.voiceAudio?.pause();if(state.voiceAudioUrl)URL.revokeObjectURL(state.voiceAudioUrl);
@@ -484,9 +485,11 @@ async function speak(text){
     const response=await fetch('/v1/voice/speak',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({text:spoken})});
     if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||`HTTP ${response.status}`);}
     await playJarvisAudio(await response.blob(),finish);
-    }catch(error){console.error(error);finish();toast(`ElevenLabs fallback: ${error.message}`);}
+    }catch(error){console.error(error);finish();toast(`Voice engine: ${error.message}`);}
   };
-  speakWithLocalVoice(text,finish,()=>useElevenLabs());
+  if(engine==='browser'){speakWithLocalVoice(text,finish,()=>useElevenLabs());return;}
+  if(engine==='elevenlabs'&&!paidVoiceEnabled){speakWithLocalVoice(text,finish,()=>{finish();toast('ElevenLabs is not ready');});return;}
+  useElevenLabs();
 }
 let voiceTurnRecognition=null;
 let voiceTurnRecorder=null;
@@ -711,7 +714,7 @@ $('#phoneLogin')?.addEventListener('click',async()=>{
     if(!result.delivered_to_telegram){try{await navigator.clipboard.writeText(result.url);toast('Link copied to clipboard');}catch{}}
   }catch(err){message.textContent=err.message;}
 });
-$('#settingsForm').addEventListener('submit',async(e)=>{e.preventDefault();try{state.settings=await api('/v1/settings',{method:'PATCH',body:JSON.stringify({voice:{session_max_seconds:Number($('#voiceMaxSeconds').value),daily_session_limit:Number($('#voiceDailyLimit').value)}})});renderUsage();$('#settingsMessage').textContent='Voice limits saved';toast('Settings saved');}catch(err){$('#settingsMessage').textContent=err.message;}});
+$('#settingsForm').addEventListener('submit',async(e)=>{e.preventDefault();try{state.settings=await api('/v1/settings',{method:'PATCH',body:JSON.stringify({voice:{session_max_seconds:Number($('#voiceMaxSeconds').value),daily_session_limit:Number($('#voiceDailyLimit').value),provider:$('#voiceProvider')?.value||'browser'}})});renderUsage();$('#settingsMessage').textContent='Voice limits saved';toast('Settings saved');}catch(err){$('#settingsMessage').textContent=err.message;}});
 $('#ollamaForm').addEventListener('submit',async(e)=>{e.preventDefault();try{state.ollamaStatus=await api('/v1/providers/ollama',{method:'POST',body:JSON.stringify({api_key:$('#ollamaApiKey').value,base_url:$('#ollamaBaseUrl').value})});$('#ollamaApiKey').value='';renderUsage();await loadModels(true);toast('Ollama provider saved');}catch(err){$('#ollamaMessage').textContent=err.message;}});
 $('#nousForm').addEventListener('submit',async(e)=>{e.preventDefault();try{state.nousStatus=await api('/v1/providers/nous',{method:'POST',body:JSON.stringify({api_key:$('#nousApiKey').value,base_url:$('#nousBaseUrl').value})});$('#nousApiKey').value='';renderUsage();await loadModels(true);toast('Nous provider saved');}catch(err){$('#nousMessage').textContent=err.message;}});
 $('#agentRingForm').addEventListener('submit',async(e)=>{e.preventDefault();try{const result=await api('/v1/agent-ring/call',{method:'POST',body:JSON.stringify({message:$('#agentRingCallMessage').value,to_phone:$('#agentRingPhone').value.trim()||null})});$('#agentRingMessage').textContent=result?.placed?'Call placed':`Not placed · ${result?.reason||result?.error||'unknown'}`;toast(result?.placed?'Call placed':'Call failed');}catch(err){$('#agentRingMessage').textContent=err.message;}});
