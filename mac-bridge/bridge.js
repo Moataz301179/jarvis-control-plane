@@ -1,5 +1,6 @@
 import { installProcessGuards } from '../lib/process-guard.js';
 installProcessGuards('mac-bridge');
+import { terminalCommandViolation, resolveTerminalCwd } from '../lib/terminal-guard.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -319,6 +320,34 @@ async function openJarvisAsk(params) {
   throw new Error(`OpenJarvis could not run on the Mac bridge: ${String(lastError?.stderr || lastError?.message || 'uv not found').slice(-2000)}`);
 }
 
+function terminalCommand(params) {
+  const command = String(params.command || '').trim();
+  const violation = terminalCommandViolation(command);
+  if (violation) throw new Error(violation);
+  const cwd = resolveTerminalCwd(params.cwd, home);
+  const timeout = Math.min(Math.max(Number(params.timeout_ms) || 120000, 1000), 600000);
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const child = spawn('/bin/zsh', ['-lc', command], { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const cap = 1024 * 1024;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 5000).unref();
+    }, timeout);
+    child.stdout.on('data', (chunk) => { if (stdout.length < cap) stdout += chunk.toString().slice(0, cap - stdout.length); });
+    child.stderr.on('data', (chunk) => { if (stderr.length < cap) stderr += chunk.toString().slice(0, cap - stderr.length); });
+    child.on('error', (error) => { clearTimeout(timer); reject(error); });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      resolve({ exit_code: code, signal: signal || null, stdout, stderr, timed_out: timedOut, duration_ms: Date.now() - started, cwd });
+    });
+  });
+}
+
 async function execute(job) {
   const params = job.params || {};
   switch (job.action) {
@@ -339,6 +368,7 @@ async function execute(job) {
     case 'codex_agent': return codexAgent(params);
     case 'claude_agent': return claudeAgent(params);
     case 'openjarvis_ask': return openJarvisAsk(params);
+    case 'terminal_command': return terminalCommand(params);
     case 'browser_profile_login': return browserProfileLogin(params);
     case 'browser_profile_probe': return browserProfileProbe(params);
     case 'remote_desktop_device': return { device_id: process.env.JARVIS_RDC_DEVICE_ID || null, hostname: os.hostname() };
