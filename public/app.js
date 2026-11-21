@@ -1,5 +1,6 @@
 if (window.location.protocol === 'file:') window.location.replace('http://127.0.0.1:13100/');
-  const state = { character: { kind: 'builtin' }, characters: [], status: null, data: null, settings: null, ollamaStatus: null, telegramStatus: null, nousStatus: null, agentRingStatus: null, githubStatus: null, repositories: [], ventureRepositories: [], capabilityAudit: null, hermesState: null, memoryEntries: [], approvals: [], accountConnections: [], factory: {catalog:null,agents:[],runs:[],schedules:[],handoffs:[]}, selectedAgent: null, selectedProject: null, conversationId: null, chatMessages: [], imageData: null, imageName: null, muted: false, micMuted: false, listening: false, elevenStatus: null, voiceSession: null, voiceAudio: null, voiceAudioUrl: null, voiceAudioContext: null, voiceAudioSource: null, audioMeterFrame: null, wakeArmed: false, wakeStarting: false, wakeRecognition: null, wakeRestartTimer: null, rearmAfterVoice: false, autoWake: false };
+  const isIOSDevice=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const state = { character: { kind: 'builtin' }, characters: [], status: null, data: null, settings: null, ollamaStatus: null, telegramStatus: null, nousStatus: null, agentRingStatus: null, githubStatus: null, repositories: [], ventureRepositories: [], capabilityAudit: null, hermesState: null, memoryEntries: [], approvals: [], accountConnections: [], factory: {catalog:null,agents:[],runs:[],schedules:[],handoffs:[]}, selectedAgent: null, selectedProject: null, conversationId: null, chatMessages: [], imageData: null, imageName: null, muted: false, micMuted: false, listening: false, elevenStatus: null, voiceSession: null, voiceAudio: null, voiceAudioUrl: null, voiceAudioContext: null, voiceAudioSource: null, audioMeterFrame: null, wakeArmed: false, wakeStarting: false, wakeRecognition: null, wakeRestartTimer: null, rearmAfterVoice: false, autoWake: false };
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
 const titleCase = (value) => String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
@@ -313,6 +314,7 @@ function toggleHandsFree(){
   setChatWorkspace(true);
   ensureAudioContext();
   if(state.autoWake){
+    if(isIOSDevice){state.autoWake=false;localStorage.setItem('jarvis_hands_free_v2','0');updateHandsFreeButton();toast('Hands-free is not supported on iPhone. Tap the mic per turn.');return;}
     if(!Recognition){toast('Hands-free wake word needs Chrome. On iPhone, tap the mic for each turn.');return;}
     armWakeWord();
     speak('Yes Boss. I am listening.');
@@ -372,7 +374,8 @@ function installHandsFreeControl(){
   const button=document.createElement('button');button.id='handsFreeToggle';button.className='mini-icon';button.type='button';button.textContent='⌁';button.title='Hands-free conversation';button.setAttribute('aria-label','Toggle hands-free conversation');
   actions.insertBefore(button,actions.firstChild);
   button.addEventListener('click',toggleHandsFree);
-  state.autoWake=localStorage.getItem('jarvis_hands_free_v2')!=='0'&&Boolean(window.SpeechRecognition||window.webkitSpeechRecognition);
+  state.autoWake=!isIOSDevice&&localStorage.getItem('jarvis_hands_free_v2')==='1'&&Boolean(window.SpeechRecognition||window.webkitSpeechRecognition);
+  if(isIOSDevice)localStorage.setItem('jarvis_hands_free_v2','0');
   updateHandsFreeButton();
   document.addEventListener('pointerdown',()=>{if(state.autoWake&&!state.wakeArmed&&!state.wakeStarting&&localStorage.getItem('jarvis_speak_replies_v2')==='0')armWakeWord(true);},{once:true});
 }
@@ -846,6 +849,7 @@ function maybeAutoArmWake(){
   setTimeout(()=>{if(!state.micMuted&&state.autoWake&&!state.voiceSession&&!state.wakeArmed&&!state.wakeStarting)armWakeWord(true);},700);
 }
 function armWakeWord(autoStart=false){
+  if(isIOSDevice)return;
   if(state.voiceSession||state.wakeStarting)return;
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!Recognition){toast('Wake listening requires Chrome speech recognition');return;}
