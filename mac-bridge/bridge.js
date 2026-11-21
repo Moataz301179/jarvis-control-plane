@@ -33,7 +33,7 @@ const token = process.env.JARVIS_MAC_BRIDGE_TOKEN;
 const baseUrl = process.env.JARVIS_BASE_URL || 'http://127.0.0.1:13100';
 if (!token) throw new Error('JARVIS_MAC_BRIDGE_TOKEN is required');
 
-const capabilities = ['open_terminal','list_files','disk_inventory','create_folder','arrange_photos','move_files','clean_temp_files','trash_file','cursor_status','cursor_open','cursor_agent','codex_agent','claude_agent','openjarvis_ask','terminal_command','scan_network','organize_folder','delete_old_files','remote_desktop_device','browser_profile_login','browser_profile_probe'];
+const capabilities = ['open_terminal','list_files','disk_inventory','create_folder','arrange_photos','move_files','clean_temp_files','trash_file','cursor_status','cursor_open','cursor_agent','codex_agent','claude_agent','openjarvis_ask','terminal_command','scan_network','organize_folder','delete_old_files','facetime_call','remote_desktop_device','browser_profile_login','browser_profile_probe'];
 let stopping = false;
 
 function withinHome(target) {
@@ -399,6 +399,20 @@ async function deleteOldFiles(params) {
   return { folder: target, days, dry_run: false, moved: moved.length, sample: moved.slice(0, 20) };
 }
 
+async function faceTimeCall(params) {
+  const raw = String(params.target || '').trim();
+  if (!raw) throw new Error('A FaceTime target is required');
+  const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw);
+  const digits = raw.replace(/[^\d+]/g, '');
+  if (!email && !/^\+[1-9]\d{7,14}$/.test(digits)) throw new Error('Use an Apple ID email or an international phone number such as +201234567890');
+  const target = email ? raw : digits;
+  const kind = params.kind === 'audio' ? 'audio' : 'video';
+  const scheme = kind === 'audio' ? 'facetime-audio' : 'facetime';
+  await execFileAsync('/usr/bin/open', [`${scheme}://${target}`], { timeout: 15000 });
+  const masked = email ? target.replace(/^(.).*(@.*)$/, '$1•••$2') : target.replace(/^(\+?\d{2}).*(\d{3})$/, '$1•••$2');
+  return { opened: true, kind, target_masked: masked };
+}
+
 function terminalCommand(params) {
   const command = String(params.command || '').trim();
   const violation = terminalCommandViolation(command);
@@ -451,6 +465,7 @@ async function execute(job) {
     case 'scan_network': return scanNetwork(params);
     case 'organize_folder': return organizeFolder(params);
     case 'delete_old_files': return deleteOldFiles(params);
+    case 'facetime_call': return faceTimeCall(params);
     case 'browser_profile_login': return browserProfileLogin(params);
     case 'browser_profile_probe': return browserProfileProbe(params);
     case 'remote_desktop_device': return { device_id: process.env.JARVIS_RDC_DEVICE_ID || null, hostname: os.hostname() };
