@@ -783,3 +783,4 @@ body.jarvis-speaking .jarvis-chat-presence .jarvis-face-svg{filter:drop-shadow(0
   transform:scaleY(var(--mouth,0));
   pointer-events:none;
 }
+.mini-icon.active{border-color:#35ffa8!important;color:#bfffe8!important;box-shadow:0 0 10px rgba(53,255,168,.4)}
