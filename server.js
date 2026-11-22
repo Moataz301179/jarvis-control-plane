@@ -1623,7 +1623,7 @@ async function summarizeConversation(id) {
   if (!summary) return null;
   const project = /hotelsvendors|\bHV\b/i.test(transcript) ? 'HV' : 'STUDIO';
   const sourceRef = `conversation:${id}`;
-  await query("UPDATE shared_memory_entries SET status='superseded' WHERE source_ref=$1 AND memory_type='conversation_summary' AND status='active'", [sourceRef]);
+  await query("UPDATE shared_memory_entries SET status='archived' WHERE source_ref=$1 AND memory_type='conversation_summary' AND status='active'", [sourceRef]);
   const inserted = await query('INSERT INTO shared_memory_entries (project_code,agent_id,memory_type,title,content,tags,source_ref,confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,title,memory_type,updated_at', [project, 'jarvis', 'conversation_summary', `Chat: ${String(conversation.title || 'conversation').slice(0, 200)}`, summary.slice(0, 4000), JSON.stringify(['conversation', 'auto']), sourceRef, 'estimated']);
   return inserted.rows[0];
 }
