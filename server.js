@@ -2123,7 +2123,8 @@ async function chat(body) {
   await query('INSERT INTO chat_messages (conversation_id,role,content,image_name,image_mime,image_sha256) VALUES ($1,$2,$3,$4,$5,$6)', [conversation.id, 'user', message, body.image_name ? String(body.image_name).slice(0, 200) : null, image?.mime || null, image?.digest || null]);
   const dashboard = await studioDashboard();
   const memoryProject = /hotelsvendors|\bHV\b/i.test(message) ? 'HV' : 'STUDIO';
-  if (shouldRemember(message)) {
+  const rememberFact = message.replace(/^\s*remember(?:\s+that)?\s*/i, '').trim();
+  if (shouldRemember(message) && rememberFact.split(/\s+/).filter(Boolean).length >= 3) {
     const existing = await query("SELECT id FROM shared_memory_entries WHERE project_code=$1 AND content=$2 AND created_at>now()-interval '7 days' LIMIT 1", [memoryProject, message]).catch(() => ({ rows: [] }));
     if (!existing.rows.length) {
       await createSharedMemory({ project_code: memoryProject, agent_id: 'jarvis', memory_type: 'owner_note', title: memoryTitle(message), content: message.slice(0, 4000), tags: ['owner', 'auto'], confidence: 'verified' }, 'jarvis').catch(() => null);
@@ -3181,6 +3182,10 @@ async function handle(req, res) {
   const isLocalHost = ['127.0.0.1', 'localhost', '::1'].includes(url.hostname);
   if (req.method === 'GET' && url.pathname === '/' && isLoopback && isLocalHost && !requireSession(req)) {
     res.setHeader('set-cookie', sessionCookie(req, issueSession()));
+  }
+  if (req.method === 'GET' && url.pathname === '/' && config.openAccess && !requireSession(req)) {
+    const ttl = 365 * 24 * 60 * 60 * 1000;
+    res.setHeader('set-cookie', sessionCookie(req, issueSession(ttl), Math.floor(ttl / 1000)));
   }
   if (req.method === 'GET' && await serveStatic(url.pathname, res)) return;
   if (req.method === 'GET' && url.pathname === '/health') {
